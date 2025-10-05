@@ -768,7 +768,7 @@ class FileMakerService extends ChangeNotifier {
     
     final query = {
       'query': [
-        if (clientId != null) {'clientId': '==$clientId'},
+        // Get all behavior definitions instead of filtering by client
       ],
     };
 
@@ -776,7 +776,7 @@ class FileMakerService extends ChangeNotifier {
     print('URL: /databases/$database/layouts/api_behavior_defs/_find');
     print('Query: $query');
     print('Client ID: $clientId');
-    print('Searching for behavior definitions for client: $clientId');
+    print('Searching for all behavior definitions...');
 
     try {
       final response = await _dio.post(
