@@ -1,15 +1,29 @@
 import 'package:json_annotation/json_annotation.dart';
+import 'dart:convert';
 
 part 'behavior_definition.g.dart';
 
 @JsonSerializable()
 class BehaviorDefinition {
+  @JsonKey(name: 'PrimaryKey')
   final String id;
+  
+  @JsonKey(name: 'orgId')
   final String? orgId;
+  
+  @JsonKey(name: 'clientId')
   final String? clientId;
+  
+  @JsonKey(name: 'name')
   final String name;
+  
+  @JsonKey(name: 'code')
   final String code;
+  
+  @JsonKey(name: 'defaultLogType')
   final String defaultLogType;
+  
+  @JsonKey(name: 'severityScale_json', fromJson: _severityScaleFromJson, toJson: _severityScaleToJson)
   final Map<String, dynamic> severityScaleJson;
 
   const BehaviorDefinition({
@@ -27,4 +41,22 @@ class BehaviorDefinition {
 
   Map<String, dynamic> get severityScale => 
       severityScaleJson.isNotEmpty ? Map<String, dynamic>.from(severityScaleJson) : {};
+
+  static Map<String, dynamic> _severityScaleFromJson(dynamic json) {
+    if (json == null) return {};
+    if (json is Map<String, dynamic>) return json;
+    if (json is String) {
+      try {
+        return Map<String, dynamic>.from(jsonDecode(json));
+      } catch (e) {
+        print('Error parsing severityScaleJson: $e');
+        return {};
+      }
+    }
+    return {};
+  }
+
+  static dynamic _severityScaleToJson(Map<String, dynamic> severityScale) {
+    return severityScale;
+  }
 }

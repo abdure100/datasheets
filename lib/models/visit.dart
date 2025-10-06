@@ -33,7 +33,7 @@ class Visit {
   final String? notes;
   @JsonKey(name: 'Appointment_date')
   final String? appointmentDate;
-  @JsonKey(name: 'time_in')
+  @JsonKey(name: 'time_in', includeToJson: false)
   final String? timeIn;
 
   const Visit({

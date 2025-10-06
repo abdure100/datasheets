@@ -147,6 +147,10 @@ class _StartVisitPageState extends State<StartVisitPage> {
       appBar: AppBar(
         title: const Text('Start Visit'),
         centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())

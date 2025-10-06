@@ -7,17 +7,13 @@ part of 'behavior_log.dart';
 // **************************************************************************
 
 BehaviorLog _$BehaviorLogFromJson(Map<String, dynamic> json) => BehaviorLog(
-      id: json['id'] as String,
+      id: json['PrimaryKey'] as String,
       visitId: json['visitId'] as String,
       clientId: json['clientId'] as String,
       behaviorId: json['behaviorId'] as String,
       assignmentId: json['assignmentId'] as String?,
-      startTs: json['startTs'] == null
-          ? null
-          : DateTime.parse(json['startTs'] as String),
-      endTs: json['endTs'] == null
-          ? null
-          : DateTime.parse(json['endTs'] as String),
+      startTs: BehaviorLog._dateTimeFromJson(json['startTs_ts']),
+      endTs: BehaviorLog._dateTimeFromJson(json['endTs_ts']),
       durationSec: (json['durationSec'] as num?)?.toInt(),
       count: (json['count'] as num?)?.toInt(),
       ratePerMin: (json['ratePerMin'] as num?)?.toDouble(),
@@ -27,23 +23,23 @@ BehaviorLog _$BehaviorLogFromJson(Map<String, dynamic> json) => BehaviorLog(
       setting: json['setting'] as String?,
       perceivedFunction: json['perceivedFunction'] as String?,
       severity: (json['severity'] as num?)?.toInt(),
-      injury: json['injury'] as bool?,
-      restraintUsed: json['restraintUsed'] as bool?,
+      injury: BehaviorLog._boolFromJson(json['injury']),
+      restraintUsed: BehaviorLog._boolFromJson(json['restraintUsed']),
       notes: json['notes'] as String?,
       collector: json['collector'] as String?,
-      createdAt: DateTime.parse(json['createdAt'] as String),
-      updatedAt: DateTime.parse(json['updatedAt'] as String),
+      createdAt: BehaviorLog._dateTimeFromJsonNonNull(json['createdAt_ts']),
+      updatedAt: BehaviorLog._dateTimeFromJsonNonNull(json['updatedAt_ts']),
     );
 
 Map<String, dynamic> _$BehaviorLogToJson(BehaviorLog instance) =>
     <String, dynamic>{
-      'id': instance.id,
+      'PrimaryKey': instance.id,
       'visitId': instance.visitId,
       'clientId': instance.clientId,
       'behaviorId': instance.behaviorId,
       'assignmentId': instance.assignmentId,
-      'startTs': instance.startTs?.toIso8601String(),
-      'endTs': instance.endTs?.toIso8601String(),
+      'startTs_ts': BehaviorLog._dateTimeToJson(instance.startTs),
+      'endTs_ts': BehaviorLog._dateTimeToJson(instance.endTs),
       'durationSec': instance.durationSec,
       'count': instance.count,
       'ratePerMin': instance.ratePerMin,
@@ -53,10 +49,10 @@ Map<String, dynamic> _$BehaviorLogToJson(BehaviorLog instance) =>
       'setting': instance.setting,
       'perceivedFunction': instance.perceivedFunction,
       'severity': instance.severity,
-      'injury': instance.injury,
-      'restraintUsed': instance.restraintUsed,
+      'injury': BehaviorLog._boolToJson(instance.injury),
+      'restraintUsed': BehaviorLog._boolToJson(instance.restraintUsed),
       'notes': instance.notes,
       'collector': instance.collector,
-      'createdAt': instance.createdAt.toIso8601String(),
-      'updatedAt': instance.updatedAt.toIso8601String(),
+      'createdAt_ts': BehaviorLog._dateTimeToJson(instance.createdAt),
+      'updatedAt_ts': BehaviorLog._dateTimeToJson(instance.updatedAt),
     };

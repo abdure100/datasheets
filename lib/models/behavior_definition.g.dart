@@ -8,22 +8,24 @@ part of 'behavior_definition.dart';
 
 BehaviorDefinition _$BehaviorDefinitionFromJson(Map<String, dynamic> json) =>
     BehaviorDefinition(
-      id: json['id'] as String,
+      id: json['PrimaryKey'] as String,
       orgId: json['orgId'] as String?,
       clientId: json['clientId'] as String?,
       name: json['name'] as String,
       code: json['code'] as String,
       defaultLogType: json['defaultLogType'] as String,
-      severityScaleJson: json['severityScaleJson'] as Map<String, dynamic>,
+      severityScaleJson:
+          BehaviorDefinition._severityScaleFromJson(json['severityScale_json']),
     );
 
 Map<String, dynamic> _$BehaviorDefinitionToJson(BehaviorDefinition instance) =>
     <String, dynamic>{
-      'id': instance.id,
+      'PrimaryKey': instance.id,
       'orgId': instance.orgId,
       'clientId': instance.clientId,
       'name': instance.name,
       'code': instance.code,
       'defaultLogType': instance.defaultLogType,
-      'severityScaleJson': instance.severityScaleJson,
+      'severityScale_json':
+          BehaviorDefinition._severityScaleToJson(instance.severityScaleJson),
     };

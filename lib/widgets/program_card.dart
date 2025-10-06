@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/program_assignment.dart';
+import '../models/behavior_log.dart';
 import '../providers/session_provider.dart';
 import 'data_collection_widgets/trials_widget.dart';
 import 'data_collection_widgets/frequency_widget.dart';
@@ -10,15 +11,22 @@ import 'data_collection_widgets/task_analysis_widget.dart';
 import 'data_collection_widgets/time_sampling_widget.dart';
 import 'data_collection_widgets/rating_scale_widget.dart';
 import 'data_collection_widgets/abc_widget.dart';
+import 'behavior_modal.dart';
 
 class ProgramCard extends StatefulWidget {
   final ProgramAssignment assignment;
   final Function(Map<String, dynamic>) onSave;
+  final String? visitId;
+  final String? clientId;
+  final Function(BehaviorLog)? onBehaviorLogged;
 
   const ProgramCard({
     super.key,
     required this.assignment,
     required this.onSave,
+    this.visitId,
+    this.clientId,
+    this.onBehaviorLogged,
   });
 
   @override
@@ -173,6 +181,32 @@ class _ProgramCardState extends State<ProgramCard> {
     }
   }
 
+  Future<void> _logBehavior() async {
+    if (widget.visitId == null || widget.clientId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cannot log behavior: Missing visit or client information'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final result = await showModalBottomSheet<BehaviorLog>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => BehaviorModal(
+        visitId: widget.visitId!,
+        clientId: widget.clientId!,
+        assignmentId: widget.assignment.id, // Pass this program's assignment ID
+      ),
+    );
+    
+    if (result != null && widget.onBehaviorLogged != null) {
+      widget.onBehaviorLogged!(result);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<SessionProvider>(
@@ -267,6 +301,23 @@ class _ProgramCardState extends State<ProgramCard> {
                     label: Text(_isSaving ? 'Saving...' : 'Save Data'),
                   ),
                 ),
+                
+                // Behavior Logging Button (only show if visit/client info available)
+                if (widget.visitId != null && widget.clientId != null) ...[
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _logBehavior,
+                      icon: const Icon(Icons.psychology),
+                      label: const Text('Log Behavior for This Program'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.blue,
+                        side: const BorderSide(color: Colors.blue),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

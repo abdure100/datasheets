@@ -9,12 +9,14 @@ import 'behavior_modal.dart';
 class BehaviorBoard extends StatefulWidget {
   final String visitId;
   final String clientId;
+  final String? assignmentId; // Optional assignment ID for context-aware logging
   final Function(BehaviorLog) onBehaviorLogged;
 
   const BehaviorBoard({
     super.key,
     required this.visitId,
     required this.clientId,
+    this.assignmentId, // Optional - if null, allows general behavior logging
     required this.onBehaviorLogged,
   });
 
@@ -31,6 +33,8 @@ class _BehaviorBoardState extends State<BehaviorBoard> {
         final behaviorLogs = sessionProvider.behaviorLogs
             .where((log) => log.visitId == widget.visitId)
             .toList();
+            
+        // Debug prints removed
 
         return Card(
           child: Padding(
@@ -128,7 +132,27 @@ class _BehaviorBoardState extends State<BehaviorBoard> {
           backgroundColor: _getLogTypeColor(log),
           child: Icon(_getLogTypeIcon(log), color: Colors.white),
         ),
-        title: Text(behaviorDef.name),
+        title: Row(
+          children: [
+            Expanded(child: Text(behaviorDef.name)),
+            if (log.assignmentId != null && log.assignmentId!.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  'Program',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.blue.shade700,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+          ],
+        ),
         subtitle: Text(_formatLogSummary(log)),
         trailing: Text(_formatLogTime(log)),
         onTap: () => _editBehaviorLog(log),
@@ -151,14 +175,23 @@ class _BehaviorBoardState extends State<BehaviorBoard> {
   }
 
   String _formatLogSummary(BehaviorLog log) {
+    String summary = '';
     if (log.isTiming) {
-      return 'Duration: ${log.durationSec ?? 0}s';
+      summary = 'Duration: ${log.durationSec ?? 0}s';
     } else if (log.isCounting) {
-      return 'Count: ${log.count ?? 0}';
+      summary = 'Count: ${log.count ?? 0}';
     } else if (log.isABC) {
-      return 'ABC Data';
+      summary = 'ABC Data';
+    } else {
+      summary = 'Behavior logged';
     }
-    return 'Behavior logged';
+    
+    // Add program context if available
+    if (log.assignmentId != null && log.assignmentId!.isNotEmpty) {
+      summary += ' • Program-specific';
+    }
+    
+    return summary;
   }
 
   String _formatLogTime(BehaviorLog log) {
@@ -184,6 +217,7 @@ class _BehaviorBoardState extends State<BehaviorBoard> {
         visitId: widget.visitId,
         clientId: widget.clientId,
         behaviorId: behaviorDef.id,
+        assignmentId: widget.assignmentId, // Use context assignment ID
         count: 1,
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
@@ -193,9 +227,10 @@ class _BehaviorBoardState extends State<BehaviorBoard> {
       widget.onBehaviorLogged(savedLog);
       
       if (mounted) {
+        final programContext = widget.assignmentId != null ? ' to current program' : '';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${behaviorDef.name} logged successfully'),
+            content: Text('${behaviorDef.name} logged successfully$programContext'),
             backgroundColor: Colors.green,
           ),
         );
@@ -219,6 +254,7 @@ class _BehaviorBoardState extends State<BehaviorBoard> {
       builder: (context) => BehaviorModal(
         visitId: widget.visitId,
         clientId: widget.clientId,
+        assignmentId: widget.assignmentId, // Pass assignment context
       ),
     );
     
@@ -234,6 +270,7 @@ class _BehaviorBoardState extends State<BehaviorBoard> {
       builder: (context) => BehaviorModal(
         visitId: widget.visitId,
         clientId: widget.clientId,
+        assignmentId: widget.assignmentId, // Pass assignment context
         existingLog: log,
       ),
     );

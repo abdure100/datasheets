@@ -112,6 +112,14 @@ class _SessionPageState extends State<SessionPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.client!.name),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            // End the session and go back
+            _endVisit();
+            Navigator.pop(context);
+          },
+        ),
         actions: [
           Text(
             _formatDuration(_elapsed),
@@ -203,6 +211,8 @@ class _SessionPageState extends State<SessionPage> {
                     padding: const EdgeInsets.only(bottom: 12.0),
                     child: ProgramCard(
                       assignment: assignment,
+                      visitId: widget.visit!.id,
+                      clientId: widget.client!.id,
                       onSave: (payload) async {
                         try {
                           final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
@@ -251,6 +261,9 @@ class _SessionPageState extends State<SessionPage> {
                             );
                           }
                         }
+                      },
+                      onBehaviorLogged: (log) {
+                        sessionProvider.addBehaviorLog(log);
                       },
                     ),
                   )),

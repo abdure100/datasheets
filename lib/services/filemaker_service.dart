@@ -383,7 +383,7 @@ class FileMakerService extends ChangeNotifier {
     // Add required fields for api_appointments layout
     final visitData = visit.toJson();
     visitData['Appointment_date'] = '${visit.startTs.month.toString().padLeft(2, '0')}/${visit.startTs.day.toString().padLeft(2, '0')}/${visit.startTs.year}';
-    visitData['time_in'] = '${visit.startTs.hour.toString().padLeft(2, '0')}:${visit.startTs.minute.toString().padLeft(2, '0')}:${visit.startTs.second.toString().padLeft(2, '0')}';
+    visitData['start_ts'] = visit.startTs.toIso8601String().split('.')[0];
     
     print('Creating visit with data: $visitData');
     _logHeaders();
@@ -486,7 +486,7 @@ class FileMakerService extends ChangeNotifier {
     // Add required fields for api_appointments layout
     final visitData = visit.toJson();
     visitData['Appointment_date'] = '${visit.startTs.month.toString().padLeft(2, '0')}/${visit.startTs.day.toString().padLeft(2, '0')}/${visit.startTs.year}';
-    visitData['time_in'] = '${visit.startTs.hour.toString().padLeft(2, '0')}:${visit.startTs.minute.toString().padLeft(2, '0')}:${visit.startTs.second.toString().padLeft(2, '0')}';
+    visitData['start_ts'] = visit.startTs.toIso8601String().split('.')[0];
     
     print('Creating visit with Dio - data: $visitData');
     
@@ -508,10 +508,76 @@ class FileMakerService extends ChangeNotifier {
 
       print('Dio response status: ${response.statusCode}');
       print('Dio response data: ${response.data}');
+      print('=== RAW FILEMAKER RESPONSE DEBUG ===');
+      print('Full response: ${response.data}');
+      print('Response type: ${response.data.runtimeType}');
+      if (response.data is Map<String, dynamic>) {
+        final data = response.data as Map<String, dynamic>;
+        print('Response keys: ${data.keys.toList()}');
+        if (data.containsKey('response')) {
+          final responseData = data['response'];
+          print('Response data type: ${responseData.runtimeType}');
+          if (responseData is Map<String, dynamic>) {
+            print('Response data keys: ${responseData.keys.toList()}');
+            print('recordId: ${responseData['recordId']} (type: ${responseData['recordId'].runtimeType})');
+            print('PrimaryKey: ${responseData['PrimaryKey']} (type: ${responseData['PrimaryKey'].runtimeType})');
+            print('modId: ${responseData['modId']} (type: ${responseData['modId'].runtimeType})');
+          }
+        }
+        if (data.containsKey('messages')) {
+          print('Messages: ${data['messages']}');
+        }
+      }
+      print('=====================================');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final recordId = response.data['response']['recordId'];
-        return visit.copyWith(id: recordId);
+        print('=== VISIT CREATION SUCCESS ===');
+        print('RecordId from FileMaker: $recordId');
+        print('Visit ID before copyWith: ${visit.id}');
+        
+        // Now fetch the PrimaryKey using the recordId
+        print('Fetching PrimaryKey for recordId: $recordId');
+        final findResponse = await _dio.post(
+          '/databases/$database/layouts/api_appointments/_find',
+          data: {
+            'query': [
+              {'recordId': '==$recordId'}
+            ]
+          },
+          options: Options(
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $_token',
+              'Accept': 'application/json',
+            },
+          ),
+        );
+        
+        print('Find response status: ${findResponse.statusCode}');
+        print('Find response data: ${findResponse.data}');
+        
+        if (findResponse.statusCode == 200) {
+          final findData = findResponse.data as Map<String, dynamic>;
+          if (findData['response']['data'] != null && 
+              (findData['response']['data'] as List).isNotEmpty) {
+            final recordData = (findData['response']['data'] as List).first;
+            final primaryKey = recordData['fieldData']['PrimaryKey'];
+            print('Found PrimaryKey: $primaryKey');
+            
+            final updatedVisit = visit.copyWith(id: primaryKey);
+            print('Visit ID after copyWith: ${updatedVisit.id}');
+            print('==============================');
+            return updatedVisit;
+          }
+        }
+        
+        // Fallback to recordId if PrimaryKey not found
+        print('PrimaryKey not found, using recordId as fallback');
+        final updatedVisit = visit.copyWith(id: recordId.toString());
+        print('Visit ID after copyWith: ${updatedVisit.id}');
+        print('==============================');
+        return updatedVisit;
       }
       throw Exception('Failed to create visit with Dio: ${response.statusCode} - ${response.data}');
     } catch (e) {
@@ -540,24 +606,54 @@ class FileMakerService extends ChangeNotifier {
   Future<Map<String, dynamic>> closeVisit(String visitId, DateTime endTs) async {
     await _ensureAuthenticated();
     
-    final response = await http.patch(
-      Uri.parse('$baseUrl/databases/$database/layouts/dapi-appointments_new/records/$visitId'),
-      headers: _headers,
-      body: json.encode({
-        'fieldData': {
-          'end_ts': endTs.toIso8601String(),
-          'statusInput': 'complete',
+    print('=== FILEMAKER CLOSE VISIT REQUEST (DIO) ===');
+    print('Visit ID: $visitId');
+    print('End Time: ${endTs.toIso8601String()}');
+    print('Using api_appointments layout...');
+    
+    try {
+      // Use the api_appointments layout instead of dapi-appointments_new
+      final response = await _dio.patch(
+        '/databases/$database/layouts/api_appointments/records/$visitId',
+        data: {
+          'fieldData': {
+            'end_ts': endTs.toIso8601String().split('.')[0],
+            'statusInput': 'submitted',
+          },
         },
-        'script': 'CloseVisitFinalize',
-        'script.param': json.encode({'visitId': visitId}),
-      }),
-    );
+        options: Options(
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $_token',
+            'Accept': 'application/json',
+          },
+        ),
+      );
 
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      return data['response']['scriptResult'] ?? {};
+      print('=== FILEMAKER CLOSE VISIT RESPONSE (DIO) ===');
+      print('Status Code: ${response.statusCode}');
+      print('Response Data: ${response.data}');
+      print('===========================================');
+
+      if (response.statusCode == 200) {
+        print('Successfully closed visit: $visitId');
+        return response.data['response'] ?? {};
+      }
+      
+      throw Exception('Failed to close visit: ${response.statusCode}');
+      
+    } catch (e) {
+      print('=== DIO CLOSE VISIT ERROR ===');
+      print('Error: $e');
+      if (e is DioException) {
+        print('DioException type: ${e.type}');
+        print('DioException message: ${e.message}');
+        print('Response data: ${e.response?.data}');
+        print('Response status: ${e.response?.statusCode}');
+      }
+      print('=============================');
+      rethrow;
     }
-    throw Exception('Failed to close visit: ${response.statusCode}');
   }
 
   // Program Assignment operations
@@ -701,25 +797,36 @@ class FileMakerService extends ChangeNotifier {
   Future<SessionRecord> upsertSessionRecord(SessionRecord record) async {
     await _ensureAuthenticated();
     
-    print('=== FILEMAKER SESSION DATA CREATE REQUEST (DIO) ===');
-    print('URL: /databases/$database/layouts/api_sessiondata/records');
-    print('Visit ID: ${record.visitId}');
-    print('Assignment ID: ${record.assignmentId}');
-    print('Creating new session record...');
+      print('=== FILEMAKER SESSION DATA CREATE REQUEST (DIO) ===');
+      print('URL: /databases/$database/layouts/api_sessiondata/records');
+      print('Visit ID: ${record.visitId} (type: ${record.visitId.runtimeType})');
+      print('Client ID: ${record.clientId} (type: ${record.clientId.runtimeType})');
+      print('Assignment ID: ${record.assignmentId} (type: ${record.assignmentId.runtimeType})');
+      print('Creating new session record...');
 
     try {
-      // Create new record directly - using PrimaryKey for visitId
+      // Create new record directly - without PrimaryKey (auto-generated)
       final testData = {
         'fieldData': {
-          'PrimaryKey': record.visitId,  // Use visitId as PrimaryKey
+          'visitId': record.visitId,  // Use visit ID as-is
           'clientId': record.clientId,
           'assignmentId': record.assignmentId,
+          'startedAt_ts': record.startedAt?.toIso8601String().split('.')[0] ?? DateTime.now().toIso8601String().split('.')[0],
+          'payload_json': jsonEncode(record.payload),
+          'staffId': record.staffId ?? '',
         }
       };
       
-      print('=== TESTING WITH PRIMARYKEY FOR VISIT ===');
+      // Validate each field before sending
+      print('=== FIELD VALIDATION ===');
+      print('visitId: "${record.visitId}" (empty: ${record.visitId.isEmpty})');
+      print('clientId: "${record.clientId}" (empty: ${record.clientId.isEmpty})');
+      print('assignmentId: "${record.assignmentId}" (empty: ${record.assignmentId.isEmpty})');
+      print('=======================');
+      
+      print('=== TESTING WITHOUT PRIMARYKEY (UPDATED) ===');
       print('Sending data: $testData');
-      print('=========================================');
+      print('=============================================');
       
       final createResponse = await _dio.post(
         '/databases/$database/layouts/api_sessiondata/records',
@@ -739,11 +846,11 @@ class FileMakerService extends ChangeNotifier {
       print('Response Data: ${createResponse.data}');
       print('====================================================');
 
-      if (createResponse.statusCode == 201) {
+      if (createResponse.statusCode == 200 || createResponse.statusCode == 201) {
         final data = createResponse.data as Map<String, dynamic>;
         final recordId = data['response']['recordId'];
         print('Successfully created new session record with ID: $recordId');
-        return record.copyWith(id: recordId);
+        return record.copyWith(id: recordId.toString());
       }
       
       throw Exception('Failed to create session record: ${createResponse.statusCode}');
@@ -768,15 +875,16 @@ class FileMakerService extends ChangeNotifier {
     
     final query = {
       'query': [
-        // Get all behavior definitions instead of filtering by client
+        {'clientId': '==D2E0071C-8DCD-46B4-A758-C4147F8BBE97'},  // Search by specific client ID
       ],
+      'limit': 100  // Limit to 100 records
     };
 
     print('=== FILEMAKER BEHAVIOR DEFINITIONS LOOKUP REQUEST (DIO) ===');
     print('URL: /databases/$database/layouts/api_behavior_defs/_find');
     print('Query: $query');
     print('Client ID: $clientId');
-    print('Searching for all behavior definitions...');
+    print('Searching for behavior definitions for client: D2E0071C-8DCD-46B4-A758-C4147F8BBE97');
 
     try {
       final response = await _dio.post(
@@ -813,11 +921,31 @@ class FileMakerService extends ChangeNotifier {
       // FileMaker "OK"
       if (code == '0') {
         final records = (data['response']?['data'] as List?) ?? const [];
-        print('=== SUCCESSFUL BEHAVIOR DEFINITIONS LOOKUP (DIO) ===');
-        print('Records found: ${records.length}');
-        print('=====================================================');
+      print('=== SUCCESSFUL BEHAVIOR DEFINITIONS LOOKUP (DIO) ===');
+      print('Records found: ${records.length}');
+      if (records.isNotEmpty) {
+        print('First record: ${records.first}');
+      } else {
+        print('No behavior definitions found in database');
+      }
+      print('=====================================================');
         
-        return records.map((record) => BehaviorDefinition.fromJson(record['fieldData'])).toList();
+        // Parse behavior definitions with debugging
+        final behaviorDefs = <BehaviorDefinition>[];
+        for (int i = 0; i < records.length; i++) {
+          try {
+            print('Parsing behavior definition ${i + 1}: ${records[i]['fieldData']}');
+            final behaviorDef = BehaviorDefinition.fromJson(records[i]['fieldData']);
+            behaviorDefs.add(behaviorDef);
+            print('Successfully parsed behavior definition ${i + 1}: ${behaviorDef.name}');
+          } catch (e) {
+            print('Error parsing behavior definition ${i + 1}: $e');
+            print('Raw data: ${records[i]['fieldData']}');
+          }
+        }
+        
+        print('Successfully parsed ${behaviorDefs.length} out of ${records.length} behavior definitions');
+        return behaviorDefs;
       }
 
       // FileMaker "no records match"
@@ -846,37 +974,175 @@ class FileMakerService extends ChangeNotifier {
   Future<BehaviorLog> createBehaviorLog(BehaviorLog log) async {
     await _ensureAuthenticated();
     
-    final response = await http.post(
-      Uri.parse('$baseUrl/databases/$database/layouts/api_behavior_logs/records'),
-      headers: _headers,
-      body: json.encode({
-        'fieldData': log.toJson(),
-      }),
-    );
+    print('=== FILEMAKER BEHAVIOR LOG CREATE REQUEST (DIO) ===');
+    print('URL: /databases/$database/layouts/api_sessiondata/records');
+    print('Creating new behavior log...');
 
-    if (response.statusCode == 201) {
-      final data = json.decode(response.body);
-      final recordId = data['response']['recordId'];
-      return log.copyWith(id: recordId);
+    try {
+      // Store behavior log data in payload_json field of session data
+      final behaviorPayload = <String, dynamic>{
+        'type': 'behavior_log',
+        'behaviorId': log.behaviorId,
+        'collector': log.collector ?? 'Current User',
+        'createdAt': log.createdAt.toIso8601String(),
+        'updatedAt': log.updatedAt.toIso8601String(),
+      };
+      
+      // Only add non-null, non-zero values
+      if (log.count != null && log.count! > 0) {
+        behaviorPayload['count'] = log.count!;
+      }
+      if (log.notes != null && log.notes!.isNotEmpty) {
+        behaviorPayload['notes'] = log.notes!;
+      }
+      if (log.antecedent != null && log.antecedent!.isNotEmpty) {
+        behaviorPayload['antecedent'] = log.antecedent!;
+      }
+      if (log.behaviorDesc != null && log.behaviorDesc!.isNotEmpty) {
+        behaviorPayload['behaviorDesc'] = log.behaviorDesc!;
+      }
+      if (log.consequence != null && log.consequence!.isNotEmpty) {
+        behaviorPayload['consequence'] = log.consequence!;
+      }
+      if (log.setting != null && log.setting!.isNotEmpty) {
+        behaviorPayload['setting'] = log.setting!;
+      }
+      if (log.perceivedFunction != null && log.perceivedFunction!.isNotEmpty) {
+        behaviorPayload['perceivedFunction'] = log.perceivedFunction!;
+      }
+      if (log.severity != null && log.severity! > 0) {
+        behaviorPayload['severity'] = log.severity!;
+      }
+      // Convert boolean values to strings for FileMaker compatibility
+      if (log.injury != null) {
+        behaviorPayload['injury'] = log.injury! ? 'true' : 'false';
+      }
+      if (log.restraintUsed != null) {
+        behaviorPayload['restraintUsed'] = log.restraintUsed! ? 'true' : 'false';
+      }
+      if (log.startTs != null) {
+        behaviorPayload['startTs'] = log.startTs!.toIso8601String();
+      }
+      if (log.endTs != null) {
+        behaviorPayload['endTs'] = log.endTs!.toIso8601String();
+      }
+      if (log.durationSec != null && log.durationSec! > 0) {
+        behaviorPayload['durationSec'] = log.durationSec!;
+      }
+      if (log.ratePerMin != null && log.ratePerMin! > 0) {
+        behaviorPayload['ratePerMin'] = log.ratePerMin!;
+      }
+      
+      // Only include essential fields with non-empty values
+      final fieldData = <String, dynamic>{
+        'visitId': log.visitId,
+        'clientId': log.clientId,
+        'payload_json': jsonEncode(behaviorPayload), // Convert to JSON string
+        'staffId': '17ED033A-7CA9-4367-AA48-3C459DBBC24C', // Default staff ID
+        'startedAt_ts': log.createdAt.toIso8601String().split('.')[0], // Complete timestamp without milliseconds
+        'updatedAt_ts': log.updatedAt.toIso8601String().split('.')[0], // Complete timestamp without milliseconds
+      };
+      
+      // Only add assignmentId if it's not null and not empty
+      if (log.assignmentId != null && log.assignmentId!.isNotEmpty) {
+        fieldData['assignmentId'] = log.assignmentId!;
+      }
+      
+      // Notes are already included in payload_json, no need to duplicate
+      
+      final behaviorLogData = {
+        'fieldData': fieldData,
+      };
+      
+      print('Simplified Behavior Log Data: $behaviorLogData');
+      
+      final response = await _dio.post(
+        '/databases/$database/layouts/api_sessiondata/records',
+        data: behaviorLogData,
+        options: Options(
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $_token',
+            'Accept': 'application/json',
+          },
+        ),
+      );
+
+      print('=== FILEMAKER BEHAVIOR LOG CREATE RESPONSE (DIO) ===');
+      print('Status Code: ${response.statusCode}');
+      print('Response Data: ${response.data}');
+      print('===================================================');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = response.data as Map<String, dynamic>;
+        final recordId = data['response']['recordId'];
+        print('Successfully created behavior log with ID: $recordId');
+        return log.copyWith(id: recordId.toString());
+      }
+      
+      throw Exception('Failed to create behavior log: ${response.statusCode}');
+      
+    } catch (e) {
+      print('=== DIO BEHAVIOR LOG ERROR ===');
+      print('Error: $e');
+      if (e is DioException) {
+        print('DioException type: ${e.type}');
+        print('DioException message: ${e.message}');
+        print('Response data: ${e.response?.data}');
+        print('Response status: ${e.response?.statusCode}');
+      }
+      print('=============================');
+      rethrow;
     }
-    throw Exception('Failed to create behavior log: ${response.statusCode}');
   }
 
   Future<BehaviorLog> updateBehaviorLog(BehaviorLog log) async {
     await _ensureAuthenticated();
     
-    final response = await http.patch(
-      Uri.parse('$baseUrl/databases/$database/layouts/api_behavior_logs/records/${log.id}'),
-      headers: _headers,
-      body: json.encode({
-        'fieldData': log.toJson(),
-      }),
-    );
+    print('=== FILEMAKER BEHAVIOR LOG UPDATE REQUEST (DIO) ===');
+    print('URL: /databases/$database/layouts/api_sessiondata/records/${log.id}');
+    print('Behavior Log Data: ${log.toJson()}');
+    print('Updating behavior log...');
 
-    if (response.statusCode == 200) {
-      return log;
+    try {
+      final response = await _dio.patch(
+        '/databases/$database/layouts/api_sessiondata/records/${log.id}',
+        data: {
+          'fieldData': log.toJson(),
+        },
+        options: Options(
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $_token',
+            'Accept': 'application/json',
+          },
+        ),
+      );
+
+      print('=== FILEMAKER BEHAVIOR LOG UPDATE RESPONSE (DIO) ===');
+      print('Status Code: ${response.statusCode}');
+      print('Response Data: ${response.data}');
+      print('===================================================');
+
+      if (response.statusCode == 200) {
+        print('Successfully updated behavior log with ID: ${log.id}');
+        return log;
+      }
+      
+      throw Exception('Failed to update behavior log: ${response.statusCode}');
+      
+    } catch (e) {
+      print('=== DIO BEHAVIOR LOG UPDATE ERROR ===');
+      print('Error: $e');
+      if (e is DioException) {
+        print('DioException type: ${e.type}');
+        print('DioException message: ${e.message}');
+        print('Response data: ${e.response?.data}');
+        print('Response status: ${e.response?.statusCode}');
+      }
+      print('=====================================');
+      rethrow;
     }
-    throw Exception('Failed to update behavior log: ${response.statusCode}');
   }
 
   // Script execution

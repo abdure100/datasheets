@@ -28,5 +28,4 @@ Map<String, dynamic> _$VisitToJson(Visit instance) => <String, dynamic>{
       'staffId': instance.staffId,
       'Procedure_Input': instance.serviceCode,
       'Appointment_date': instance.appointmentDate,
-      'time_in': instance.timeIn,
     };

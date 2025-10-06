@@ -9,12 +9,14 @@ import '../providers/session_provider.dart';
 class BehaviorModal extends StatefulWidget {
   final String visitId;
   final String clientId;
+  final String? assignmentId; // Optional assignment ID for context
   final BehaviorLog? existingLog;
 
   const BehaviorModal({
     super.key,
     required this.visitId,
     required this.clientId,
+    this.assignmentId, // Optional - if null, allows general behavior logging
     this.existingLog,
   });
 
@@ -122,6 +124,7 @@ class _BehaviorModalState extends State<BehaviorModal> {
         visitId: widget.visitId,
         clientId: widget.clientId,
         behaviorId: _selectedBehavior!.id,
+        assignmentId: widget.assignmentId, // Use context assignment ID
         count: _logType == 'count' ? _count : null,
         startTs: _logType == 'duration' ? DateTime.now().subtract(Duration(seconds: _durationSeconds)) : null,
         endTs: _logType == 'duration' ? DateTime.now() : null,
@@ -193,6 +196,34 @@ class _BehaviorModalState extends State<BehaviorModal> {
                 ),
                 
                 const Divider(),
+                
+                // Program Context Indicator
+                if (widget.assignmentId != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.assignment, color: Colors.blue.shade700, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Logging to current program',
+                            style: TextStyle(
+                              color: Colors.blue.shade700,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 
                 Expanded(
                   child: SingleChildScrollView(
