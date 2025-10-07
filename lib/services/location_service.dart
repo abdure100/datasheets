@@ -47,4 +47,17 @@ class LocationService {
     var status = await Permission.location.request();
     return status == PermissionStatus.granted;
   }
+
+  static Future<bool> requestCameraPermission() async {
+    var status = await Permission.camera.request();
+    return status == PermissionStatus.granted;
+  }
+
+  static Future<bool> requestAllPermissions() async {
+    var locationStatus = await Permission.location.request();
+    var cameraStatus = await Permission.camera.request();
+    
+    return locationStatus == PermissionStatus.granted && 
+           cameraStatus == PermissionStatus.granted;
+  }
 }

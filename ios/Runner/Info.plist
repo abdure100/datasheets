@@ -49,5 +49,7 @@
 	<string>This app needs location access to track visit start and end locations for data collection purposes.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>This app needs location access to track visit start and end locations for data collection purposes.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>This app needs camera access to capture photos and videos for data collection and documentation purposes.</string>
 </dict>
 </plist>
