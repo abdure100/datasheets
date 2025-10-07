@@ -224,6 +224,12 @@ class _StartVisitPageState extends State<StartVisitPage> {
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
+          // Test Connection Button
+          IconButton(
+            onPressed: _isLoading ? null : _testConnection,
+            icon: const Icon(Icons.wifi),
+            tooltip: 'Test FileMaker Connection',
+          ),
           // Staff Avatar
           Padding(
             padding: const EdgeInsets.only(right: 16.0),
@@ -281,21 +287,6 @@ class _StartVisitPageState extends State<StartVisitPage> {
                               },
                             ),
                     ),
-                    const SizedBox(height: 20),
-
-                    // Test Connection Button
-                    OutlinedButton.icon(
-                      onPressed: _isLoading ? null : _testConnection,
-                      icon: const Icon(Icons.wifi),
-                      label: const Text('Test FileMaker Connection'),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                    ),
-
                     const SizedBox(height: 20),
                   ],
                 ),
