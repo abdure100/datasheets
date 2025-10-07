@@ -9,7 +9,9 @@ import '../widgets/program_card.dart';
 import '../widgets/behavior_board.dart';
 
 class ManualSessionPage extends StatefulWidget {
-  const ManualSessionPage({super.key});
+  final Client client;
+  
+  const ManualSessionPage({super.key, required this.client});
 
   @override
   State<ManualSessionPage> createState() => _ManualSessionPageState();
@@ -31,6 +33,7 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
   @override
   void initState() {
     super.initState();
+    _client = widget.client;
   }
 
   @override

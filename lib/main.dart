@@ -57,7 +57,7 @@ class DataSheetsApp extends StatelessWidget {
           },
           '/manual-session': (context) {
             final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
-            return const ManualSessionPage();
+            return ManualSessionPage(client: args?['client']);
           },
         },
       ),
