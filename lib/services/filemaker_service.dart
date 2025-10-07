@@ -481,7 +481,7 @@ class FileMakerService extends ChangeNotifier {
   }
 
   // Alternative createVisit method using Dio
-  Future<Visit> createVisitWithDio(Visit visit) async {
+  Future<Visit> createVisitWithDio(Visit visit, {bool skipLocation = false}) async {
     await _ensureAuthenticated();
     
     // Add required fields for api_appointments layout
@@ -491,19 +491,26 @@ class FileMakerService extends ChangeNotifier {
     
     visitData['update_flagx'] = 5; // Trigger processing in FileMaker
     
-    // Get current location for start
-    print('Getting current location for visit start...');
-    final location = await LocationService.getCurrentLocation();
-    if (location != null) {
-      visitData['start_latitude'] = location['latitude']!;
-      visitData['start_longitude'] = location['longitude']!;
-      visitData['start_location_accuracy'] = location['accuracy']!;
-      print('Location obtained: ${location['latitude']}, ${location['longitude']}');
+    // Get current location for start (skip for manual entries)
+    if (!skipLocation) {
+      print('Getting current location for visit start...');
+      final location = await LocationService.getCurrentLocation();
+      if (location != null) {
+        visitData['start_latitude'] = location['latitude']!;
+        visitData['start_longitude'] = location['longitude']!;
+        visitData['start_location_accuracy'] = location['accuracy']!;
+        print('Location obtained: ${location['latitude']}, ${location['longitude']}');
+      } else {
+        visitData['start_latitude'] = '0.0';
+        visitData['start_longitude'] = '0.0';
+        visitData['start_location_accuracy'] = '0.0';
+        print('Location not available, using default values');
+      }
     } else {
+      print('Skipping location tracking for manual entry');
       visitData['start_latitude'] = '0.0';
       visitData['start_longitude'] = '0.0';
       visitData['start_location_accuracy'] = '0.0';
-      print('Location not available, using default values');
     }
     
     print('Creating visit with Dio - data: $visitData');

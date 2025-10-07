@@ -20,6 +20,7 @@ class _StartVisitPageState extends State<StartVisitPage> {
   bool _isHistoricalMode = false;
   DateTime _selectedDate = DateTime.now();
   TimeOfDay _selectedStartTime = TimeOfDay.now();
+  TimeOfDay _selectedEndTime = TimeOfDay.now();
   
   // Get current user info from FileMakerService
   String get _currentStaffId => Provider.of<FileMakerService>(context, listen: false).currentStaffId ?? '';
@@ -145,6 +146,23 @@ class _StartVisitPageState extends State<StartVisitPage> {
     if (picked != null && picked != _selectedStartTime) {
       setState(() {
         _selectedStartTime = picked;
+        // Set end time to 1 hour after start time by default
+        _selectedEndTime = TimeOfDay(
+          hour: (picked.hour + 1) % 24,
+          minute: picked.minute,
+        );
+      });
+    }
+  }
+
+  Future<void> _selectEndTime() async {
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: _selectedEndTime,
+    );
+    if (picked != null && picked != _selectedEndTime) {
+      setState(() {
+        _selectedEndTime = picked;
       });
     }
   }
@@ -196,7 +214,7 @@ class _StartVisitPageState extends State<StartVisitPage> {
       final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
       final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
 
-      // Create visit with historical or current timestamp
+      // Create visit with manual or current timestamp
       final startDateTime = _isHistoricalMode 
           ? DateTime(
               _selectedDate.year,
@@ -207,16 +225,27 @@ class _StartVisitPageState extends State<StartVisitPage> {
             )
           : DateTime.now();
       
+      final endDateTime = _isHistoricalMode 
+          ? DateTime(
+              _selectedDate.year,
+              _selectedDate.month,
+              _selectedDate.day,
+              _selectedEndTime.hour,
+              _selectedEndTime.minute,
+            )
+          : null;
+      
       final visit = Visit(
         id: '', // Will be set by FileMaker
         clientId: _selectedClient!.id,
         staffId: _currentStaffId,
         serviceCode: _currentServiceCode,
         startTs: startDateTime,
+        endTs: endDateTime,
         status: _isHistoricalMode ? 'completed' : 'in_progress',
       );
 
-      final createdVisit = await fileMakerService.createVisitWithDio(visit);
+      final createdVisit = await fileMakerService.createVisitWithDio(visit, skipLocation: _isHistoricalMode);
       
       // Start session
       sessionProvider.startVisit(createdVisit, _selectedClient!);
@@ -242,14 +271,14 @@ class _StartVisitPageState extends State<StartVisitPage> {
 
       if (mounted) {
         if (_isHistoricalMode) {
-          // For historical sessions, show a message and return to client list
+          // For manual sessions, show a message and return to client list
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Historical session created. You can now enter session data.'),
+              content: Text('Manual session created. You can now enter session data.'),
               backgroundColor: Colors.green,
             ),
           );
-          // Stay on the client selection page for historical entry
+          // Stay on the client selection page for manual entry
         } else {
           // For live sessions, navigate to session page
           Navigator.pushReplacementNamed(
@@ -342,7 +371,7 @@ class _StartVisitPageState extends State<StartVisitPage> {
                                 ),
                                 const SizedBox(width: 8),
                                 const Text(
-                                  'Historical Entry Mode',
+                                  'Manual Entry Mode',
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w500,
@@ -362,7 +391,7 @@ class _StartVisitPageState extends State<StartVisitPage> {
                             if (_isHistoricalMode) ...[
                               const SizedBox(height: 16),
                               const Text(
-                                'Enter session data for a past date/time',
+                                'Manually enter session data with start and end times',
                                 style: TextStyle(
                                   fontSize: 14,
                                   color: Colors.grey,
@@ -370,60 +399,97 @@ class _StartVisitPageState extends State<StartVisitPage> {
                               ),
                               const SizedBox(height: 16),
                               // Date and Time Selection
-                              Row(
+                              Column(
                                 children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        const Text('Date:', style: TextStyle(fontWeight: FontWeight.w500)),
-                                        const SizedBox(height: 4),
-                                        InkWell(
-                                          onTap: _selectDate,
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                            decoration: BoxDecoration(
-                                              border: Border.all(color: Colors.grey[300]!),
-                                              borderRadius: BorderRadius.circular(4),
+                                  // Date Selection
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            const Text('Date:', style: TextStyle(fontWeight: FontWeight.w500)),
+                                            const SizedBox(height: 4),
+                                            InkWell(
+                                              onTap: _selectDate,
+                                              child: Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                                decoration: BoxDecoration(
+                                                  border: Border.all(color: Colors.grey[300]!),
+                                                  borderRadius: BorderRadius.circular(4),
+                                                ),
+                                                child: Row(
+                                                  children: [
+                                                    const Icon(Icons.calendar_today, size: 16),
+                                                    const SizedBox(width: 8),
+                                                    Text(_formatDate(_selectedDate)),
+                                                  ],
+                                                ),
+                                              ),
                                             ),
-                                            child: Row(
-                                              children: [
-                                                const Icon(Icons.calendar_today, size: 16),
-                                                const SizedBox(width: 8),
-                                                Text(_formatDate(_selectedDate)),
-                                              ],
-                                            ),
-                                          ),
+                                          ],
                                         ),
-                                      ],
-                                    ),
+                                      ),
+                                    ],
                                   ),
-                                  const SizedBox(width: 16),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        const Text('Start Time:', style: TextStyle(fontWeight: FontWeight.w500)),
-                                        const SizedBox(height: 4),
-                                        InkWell(
-                                          onTap: _selectStartTime,
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                            decoration: BoxDecoration(
-                                              border: Border.all(color: Colors.grey[300]!),
-                                              borderRadius: BorderRadius.circular(4),
+                                  const SizedBox(height: 16),
+                                  // Time Selection
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            const Text('Start Time:', style: TextStyle(fontWeight: FontWeight.w500)),
+                                            const SizedBox(height: 4),
+                                            InkWell(
+                                              onTap: _selectStartTime,
+                                              child: Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                                decoration: BoxDecoration(
+                                                  border: Border.all(color: Colors.grey[300]!),
+                                                  borderRadius: BorderRadius.circular(4),
+                                                ),
+                                                child: Row(
+                                                  children: [
+                                                    const Icon(Icons.access_time, size: 16),
+                                                    const SizedBox(width: 8),
+                                                    Text(_formatTime(_selectedStartTime)),
+                                                  ],
+                                                ),
+                                              ),
                                             ),
-                                            child: Row(
-                                              children: [
-                                                const Icon(Icons.access_time, size: 16),
-                                                const SizedBox(width: 8),
-                                                Text(_formatTime(_selectedStartTime)),
-                                              ],
-                                            ),
-                                          ),
+                                          ],
                                         ),
-                                      ],
-                                    ),
+                                      ),
+                                      const SizedBox(width: 16),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            const Text('End Time:', style: TextStyle(fontWeight: FontWeight.w500)),
+                                            const SizedBox(height: 4),
+                                            InkWell(
+                                              onTap: _selectEndTime,
+                                              child: Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                                decoration: BoxDecoration(
+                                                  border: Border.all(color: Colors.grey[300]!),
+                                                  borderRadius: BorderRadius.circular(4),
+                                                ),
+                                                child: Row(
+                                                  children: [
+                                                    const Icon(Icons.access_time, size: 16),
+                                                    const SizedBox(width: 8),
+                                                    Text(_formatTime(_selectedEndTime)),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
