@@ -19,6 +19,8 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
   final _formKey = GlobalKey<FormState>();
   late Client _client;
   DateTime _selectedDate = DateTime.now();
+  TimeOfDay _selectedTimeIn = TimeOfDay.now();
+  TimeOfDay _selectedTimeOut = TimeOfDay.now();
   bool _isLoading = false;
   bool _isSaving = false;
   
@@ -58,6 +60,7 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
       print('Loading behavior definitions for client: ${_client.id}');
       final behaviorDefs = await fileMakerService.getBehaviorDefinitions(clientId: _client.id);
       print('Loaded ${behaviorDefs.length} behavior definitions');
+      print('Behavior definitions details: ${behaviorDefs.map((b) => b.name).toList()}');
       
       print('Setting _assignments to ${assignments.length} items and _behaviorDefs to ${behaviorDefs.length} items');
       setState(() {
@@ -95,6 +98,34 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
     return '${date.month}/${date.day}/${date.year}';
   }
 
+  Future<void> _selectTimeIn() async {
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: _selectedTimeIn,
+    );
+    if (picked != null && picked != _selectedTimeIn) {
+      setState(() {
+        _selectedTimeIn = picked;
+      });
+    }
+  }
+
+  Future<void> _selectTimeOut() async {
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: _selectedTimeOut,
+    );
+    if (picked != null && picked != _selectedTimeOut) {
+      setState(() {
+        _selectedTimeOut = picked;
+      });
+    }
+  }
+
+  String _formatTime(TimeOfDay time) {
+    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  }
+
   Future<void> _createVisit() async {
     if (_createdVisit != null) return; // Already created
     
@@ -105,16 +136,16 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
         _selectedDate.year,
         _selectedDate.month,
         _selectedDate.day,
-        9, // Default to 9 AM
-        0, // Default to 0 minutes
+        _selectedTimeIn.hour,
+        _selectedTimeIn.minute,
       );
       
       final endDateTime = DateTime(
         _selectedDate.year,
         _selectedDate.month,
         _selectedDate.day,
-        10, // Default to 10 AM (1 hour later)
-        0, // Default to 0 minutes
+        _selectedTimeOut.hour,
+        _selectedTimeOut.minute,
       );
       
       final visit = Visit(
@@ -252,6 +283,66 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
                             ),
                             const SizedBox(height: 16),
                             
+                            // Time Selection
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text('Time In:', style: TextStyle(fontWeight: FontWeight.w500)),
+                                      const SizedBox(height: 4),
+                                      InkWell(
+                                        onTap: _selectTimeIn,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                          decoration: BoxDecoration(
+                                            border: Border.all(color: Colors.grey[300]!),
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              const Icon(Icons.access_time, size: 16),
+                                              const SizedBox(width: 8),
+                                              Text(_formatTime(_selectedTimeIn)),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text('Time Out:', style: TextStyle(fontWeight: FontWeight.w500)),
+                                      const SizedBox(height: 4),
+                                      InkWell(
+                                        onTap: _selectTimeOut,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                          decoration: BoxDecoration(
+                                            border: Border.all(color: Colors.grey[300]!),
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              const Icon(Icons.access_time, size: 16),
+                                              const SizedBox(width: 8),
+                                              Text(_formatTime(_selectedTimeOut)),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            
                             // Session Status
                             Container(
                               padding: const EdgeInsets.all(12),
@@ -314,6 +405,7 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
                     // Behavior Board
                     // Debug: Check behavior definitions count
                     Text('DEBUG: _behaviorDefs.length = ${_behaviorDefs.length}'),
+                    Text('DEBUG: _behaviorDefs names: ${_behaviorDefs.map((b) => b.name).toList()}'),
                     if (_behaviorDefs.isNotEmpty) ...[
                       const Text(
                         'Behavior Logging',
