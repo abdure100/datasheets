@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/client.dart';
 import '../models/visit.dart';
+import '../models/program_assignment.dart';
 import '../models/behavior_definition.dart';
 import '../services/filemaker_service.dart';
+import '../widgets/program_card.dart';
 import '../widgets/behavior_board.dart';
 
 class ManualSessionPage extends StatefulWidget {
@@ -20,6 +22,7 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
   bool _isLoading = false;
   bool _isSaving = false;
   
+  List<ProgramAssignment> _assignments = [];
   List<BehaviorDefinition> _behaviorDefs = [];
   Visit? _createdVisit;
 
@@ -46,14 +49,21 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
     try {
       final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
       
-      // Load behavior definitions only
+      // Load program assignments
+      print('Loading program assignments for client: ${_client.id}');
+      final assignments = await fileMakerService.getProgramAssignments(_client.id);
+      print('Loaded ${assignments.length} program assignments');
+      
+      // Load behavior definitions
       print('Loading behavior definitions for client: ${_client.id}');
       final behaviorDefs = await fileMakerService.getBehaviorDefinitions(clientId: _client.id);
       print('Loaded ${behaviorDefs.length} behavior definitions');
-      print('Setting _behaviorDefs to ${behaviorDefs.length} items');
+      
+      print('Setting _assignments to ${assignments.length} items and _behaviorDefs to ${behaviorDefs.length} items');
       setState(() {
+        _assignments = assignments;
         _behaviorDefs = behaviorDefs;
-        print('After setState: _behaviorDefs.length = ${_behaviorDefs.length}');
+        print('After setState: _assignments.length = ${_assignments.length}, _behaviorDefs.length = ${_behaviorDefs.length}');
       });
       
     } catch (e) {
@@ -269,6 +279,37 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
                       ),
                     ),
                     const SizedBox(height: 20),
+                    
+                    // Program Assignments
+                    // Debug: Check assignments count
+                    Text('DEBUG: _assignments.length = ${_assignments.length}'),
+                    if (_assignments.isNotEmpty) ...[
+                      const Text(
+                        'Program Assignments',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      ..._assignments.map((assignment) => Padding(
+                        padding: const EdgeInsets.only(bottom: 8.0),
+                        child: ProgramCard(
+                          assignment: assignment,
+                          visitId: _createdVisit?.id,
+                          clientId: _client.id,
+                          onSave: (data) {
+                            // Handle program data saving
+                            print('Program data saved: $data');
+                          },
+                          onBehaviorLogged: (behaviorLog) {
+                            // Handle behavior logging
+                            print('Behavior logged: ${behaviorLog.behaviorDesc}');
+                          },
+                        ),
+                      )),
+                      const SizedBox(height: 20),
+                    ],
                     
                     // Behavior Board
                     // Debug: Check behavior definitions count
