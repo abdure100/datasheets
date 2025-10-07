@@ -17,6 +17,9 @@ class _StartVisitPageState extends State<StartVisitPage> {
   Client? _selectedClient;
   List<Client> _clients = [];
   bool _isLoading = false;
+  bool _isHistoricalMode = false;
+  DateTime _selectedDate = DateTime.now();
+  TimeOfDay _selectedStartTime = TimeOfDay.now();
   
   // Get current user info from FileMakerService
   String get _currentStaffId => Provider.of<FileMakerService>(context, listen: false).currentStaffId ?? '';
@@ -120,6 +123,40 @@ class _StartVisitPageState extends State<StartVisitPage> {
     await _startVisit();
   }
 
+  Future<void> _selectDate() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime.now().subtract(const Duration(days: 365)),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null && picked != _selectedDate) {
+      setState(() {
+        _selectedDate = picked;
+      });
+    }
+  }
+
+  Future<void> _selectStartTime() async {
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: _selectedStartTime,
+    );
+    if (picked != null && picked != _selectedStartTime) {
+      setState(() {
+        _selectedStartTime = picked;
+      });
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.month}/${date.day}/${date.year}';
+  }
+
+  String _formatTime(TimeOfDay time) {
+    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  }
+
   Future<void> _testConnection() async {
     setState(() => _isLoading = true);
     try {
@@ -159,14 +196,24 @@ class _StartVisitPageState extends State<StartVisitPage> {
       final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
       final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
 
-      // Create visit
+      // Create visit with historical or current timestamp
+      final startDateTime = _isHistoricalMode 
+          ? DateTime(
+              _selectedDate.year,
+              _selectedDate.month,
+              _selectedDate.day,
+              _selectedStartTime.hour,
+              _selectedStartTime.minute,
+            )
+          : DateTime.now();
+      
       final visit = Visit(
         id: '', // Will be set by FileMaker
         clientId: _selectedClient!.id,
         staffId: _currentStaffId,
         serviceCode: _currentServiceCode,
-        startTs: DateTime.now(),
-        status: 'in_progress',
+        startTs: startDateTime,
+        status: _isHistoricalMode ? 'completed' : 'in_progress',
       );
 
       final createdVisit = await fileMakerService.createVisitWithDio(visit);
@@ -194,14 +241,26 @@ class _StartVisitPageState extends State<StartVisitPage> {
       }
 
       if (mounted) {
-        Navigator.pushReplacementNamed(
-          context,
-          '/session',
-          arguments: {
-            'visit': createdVisit,
-            'client': _selectedClient!,
-          },
-        );
+        if (_isHistoricalMode) {
+          // For historical sessions, show a message and return to client list
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Historical session created. You can now enter session data.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          // Stay on the client selection page for historical entry
+        } else {
+          // For live sessions, navigate to session page
+          Navigator.pushReplacementNamed(
+            context,
+            '/session',
+            arguments: {
+              'visit': createdVisit,
+              'client': _selectedClient!,
+            },
+          );
+        }
       }
     } catch (e) {
       setState(() => _isLoading = false);
@@ -266,7 +325,114 @@ class _StartVisitPageState extends State<StartVisitPage> {
                       ),
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 30),
+                    const SizedBox(height: 20),
+                    
+                    // Historical Entry Mode Toggle
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.history,
+                                  color: _isHistoricalMode ? Theme.of(context).primaryColor : Colors.grey,
+                                ),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Historical Entry Mode',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Switch(
+                                  value: _isHistoricalMode,
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _isHistoricalMode = value;
+                                    });
+                                  },
+                                ),
+                              ],
+                            ),
+                            if (_isHistoricalMode) ...[
+                              const SizedBox(height: 16),
+                              const Text(
+                                'Enter session data for a past date/time',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              // Date and Time Selection
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Text('Date:', style: TextStyle(fontWeight: FontWeight.w500)),
+                                        const SizedBox(height: 4),
+                                        InkWell(
+                                          onTap: _selectDate,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                            decoration: BoxDecoration(
+                                              border: Border.all(color: Colors.grey[300]!),
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                const Icon(Icons.calendar_today, size: 16),
+                                                const SizedBox(width: 8),
+                                                Text(_formatDate(_selectedDate)),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Text('Start Time:', style: TextStyle(fontWeight: FontWeight.w500)),
+                                        const SizedBox(height: 4),
+                                        InkWell(
+                                          onTap: _selectStartTime,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                            decoration: BoxDecoration(
+                                              border: Border.all(color: Colors.grey[300]!),
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                const Icon(Icons.access_time, size: 16),
+                                                const SizedBox(width: 8),
+                                                Text(_formatTime(_selectedStartTime)),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
                     
                     // Client Selection Table
                     Container(
