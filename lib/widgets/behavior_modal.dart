@@ -126,8 +126,8 @@ class _BehaviorModalState extends State<BehaviorModal> {
         behaviorId: _selectedBehavior!.id,
         assignmentId: widget.assignmentId, // Use context assignment ID
         count: _logType == 'count' ? _count : null,
-        startTs: _logType == 'duration' ? DateTime.now().subtract(Duration(seconds: _durationSeconds)) : null,
-        endTs: _logType == 'duration' ? DateTime.now() : null,
+        startTs: _logType == 'duration' ? DateTime.now() : null, // For manual entry, use current time as start
+        endTs: _logType == 'duration' ? DateTime.now() : null, // For manual entry, use current time as end
         durationSec: _logType == 'duration' ? _durationSeconds : null,
         antecedent: _logType == 'abc' ? _antecedent : null,
         behaviorDesc: _logType == 'abc' ? _behavior : null,
@@ -317,37 +317,42 @@ class _BehaviorModalState extends State<BehaviorModal> {
                           Container(
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                              color: _isTiming ? Colors.green[50] : Colors.blue[50],
+                              color: Colors.blue[50],
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(
-                                color: _isTiming ? Colors.green[200]! : Colors.blue[200]!,
+                                color: Colors.blue[200]!,
                               ),
                             ),
                             child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  '${_durationSeconds}s',
-                                  style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+                                const Text(
+                                  'Duration (seconds)',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                  ),
                                 ),
-                                const SizedBox(height: 16),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                                  children: [
-                                    ElevatedButton.icon(
-                                      onPressed: _isTiming ? _stopTimer : _startTimer,
-                                      icon: Icon(_isTiming ? Icons.pause : Icons.play_arrow),
-                                      label: Text(_isTiming ? 'Stop' : 'Start'),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: _isTiming ? Colors.red : Colors.green,
-                                        foregroundColor: Colors.white,
-                                      ),
-                                    ),
-                                    OutlinedButton.icon(
-                                      onPressed: _isTiming ? null : _resetTimer,
-                                      icon: const Icon(Icons.refresh),
-                                      label: const Text('Reset'),
-                                    ),
-                                  ],
+                                const SizedBox(height: 8),
+                                TextFormField(
+                                  initialValue: _durationSeconds.toString(),
+                                  keyboardType: TextInputType.number,
+                                  decoration: const InputDecoration(
+                                    hintText: 'Enter duration in seconds',
+                                    border: OutlineInputBorder(),
+                                    prefixIcon: Icon(Icons.timer),
+                                  ),
+                                  onChanged: (value) {
+                                    _durationSeconds = int.tryParse(value) ?? 0;
+                                  },
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Current: ${_durationSeconds}s',
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey,
+                                  ),
                                 ),
                               ],
                             ),

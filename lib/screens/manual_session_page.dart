@@ -55,21 +55,14 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
       final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
       
       // Load program assignments
-      print('Loading program assignments for client: ${_client.id}');
       final assignments = await fileMakerService.getProgramAssignments(_client.id);
-      print('Loaded ${assignments.length} program assignments');
       
       // Load behavior definitions
-      print('Loading behavior definitions for client: ${_client.id}');
       final behaviorDefs = await fileMakerService.getBehaviorDefinitions(clientId: _client.id);
-      print('Loaded ${behaviorDefs.length} behavior definitions');
-      print('Behavior definitions details: ${behaviorDefs.map((b) => b.name).toList()}');
       
-      print('Setting _assignments to ${assignments.length} items and _behaviorDefs to ${behaviorDefs.length} items');
       setState(() {
         _assignments = assignments;
         _behaviorDefs = behaviorDefs;
-        print('After setState: _assignments.length = ${_assignments.length}, _behaviorDefs.length = ${_behaviorDefs.length}');
       });
       
     } catch (e) {
@@ -375,8 +368,6 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
                     const SizedBox(height: 20),
                     
                     // Program Assignments
-                    // Debug: Check assignments count
-                    Text('DEBUG: _assignments.length = ${_assignments.length}'),
                     if (_assignments.isNotEmpty) ...[
                       const Text(
                         'Program Assignments',
@@ -406,9 +397,6 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
                     ],
                     
                     // Behavior Board
-                    // Debug: Check behavior definitions count
-                    Text('DEBUG: _behaviorDefs.length = ${_behaviorDefs.length}'),
-                    Text('DEBUG: _behaviorDefs names: ${_behaviorDefs.map((b) => b.name).toList()}'),
                     if (_behaviorDefs.isNotEmpty) ...[
                       const Text(
                         'Behavior Logging',
