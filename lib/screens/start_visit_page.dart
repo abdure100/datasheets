@@ -48,6 +48,74 @@ class _StartVisitPageState extends State<StartVisitPage> {
     }
   }
 
+  Widget _buildClientRow(Client client) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: Colors.grey[200]!),
+        ),
+      ),
+      child: Row(
+        children: [
+          // Avatar
+          CircleAvatar(
+            radius: 24,
+            backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
+            child: Text(
+              client.name.isNotEmpty ? client.name[0].toUpperCase() : '?',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).primaryColor,
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          // Client Info
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  client.name,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                if (client.dateOfBirth != null && client.dateOfBirth!.isNotEmpty)
+                  Text(
+                    'DOB: ${client.dateOfBirth}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          // Start Session Button
+          ElevatedButton.icon(
+            onPressed: () => _startSessionWithClient(client),
+            icon: const Icon(Icons.play_arrow, size: 18),
+            label: const Text('Start Session'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).primaryColor,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _startSessionWithClient(Client client) async {
+    setState(() => _selectedClient = client);
+    await _startVisit();
+  }
+
   Future<void> _testConnection() async {
     setState(() => _isLoading = true);
     try {
@@ -145,7 +213,7 @@ class _StartVisitPageState extends State<StartVisitPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Start Visit'),
+        title: const Text('Select Client'),
         centerTitle: true,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -163,7 +231,7 @@ class _StartVisitPageState extends State<StartVisitPage> {
                   children: [
                     const SizedBox(height: 20),
                     const Text(
-                      'Start New Session',
+                      'Select a Client to Start Session',
                       style: TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
@@ -172,27 +240,24 @@ class _StartVisitPageState extends State<StartVisitPage> {
                     ),
                     const SizedBox(height: 30),
                     
-                    // Client Selection
-                    DropdownButtonFormField<Client>(
-                      initialValue: _selectedClient,
-                      decoration: const InputDecoration(
-                        labelText: 'Client',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.person),
+                    // Client Selection Table
+                    Container(
+                      height: 300,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey[300]!),
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                      items: _clients.map((client) {
-                        return DropdownMenuItem(
-                          value: client,
-                          child: Text(client.name),
-                        );
-                      }).toList(),
-                      onChanged: (client) {
-                        setState(() => _selectedClient = client);
-                      },
-                      validator: (value) {
-                        if (value == null) return 'Please select a client';
-                        return null;
-                      },
+                      child: _clients.isEmpty
+                          ? const Center(
+                              child: Text('No clients available'),
+                            )
+                          : ListView.builder(
+                              itemCount: _clients.length,
+                              itemBuilder: (context, index) {
+                                final client = _clients[index];
+                                return _buildClientRow(client);
+                              },
+                            ),
                     ),
                     const SizedBox(height: 20),
 
@@ -238,30 +303,6 @@ class _StartVisitPageState extends State<StartVisitPage> {
                     ),
 
                     const SizedBox(height: 20),
-
-                    // Start Button
-                    ElevatedButton(
-                      onPressed: _isLoading ? null : _startVisit,
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      child: _isLoading
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                              ),
-                            )
-                          : const Text(
-                              'Start Visit',
-                              style: TextStyle(fontSize: 18),
-                            ),
-                    ),
                   ],
                 ),
               ),
