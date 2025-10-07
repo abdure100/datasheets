@@ -32,8 +32,11 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_createdVisit == null) {
-      _loadData();
-      _createVisit(); // Automatically create session
+      // Use post-frame callback to avoid calling ScaffoldMessenger during build
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _loadData();
+        _createVisit(); // Automatically create session
+      });
     }
   }
 
@@ -243,11 +246,11 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
                                 border: Border.all(color: Colors.green),
                                 borderRadius: BorderRadius.circular(8),
                               ),
-                              child: Row(
+                              child: const Row(
                                 children: [
-                                  const Icon(Icons.check_circle, color: Colors.green),
-                                  const SizedBox(width: 8),
-                                  const Text(
+                                  Icon(Icons.check_circle, color: Colors.green),
+                                  SizedBox(width: 8),
+                                  Text(
                                     'Session created automatically',
                                     style: TextStyle(
                                       color: Colors.green,
