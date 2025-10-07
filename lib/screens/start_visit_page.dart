@@ -270,6 +270,8 @@ class _StartVisitPageState extends State<StartVisitPage> {
       }
 
       if (mounted) {
+        setState(() => _isLoading = false);
+        
         if (_isHistoricalMode) {
           // For manual sessions, show a message and return to client list
           ScaffoldMessenger.of(context).showSnackBar(
