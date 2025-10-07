@@ -66,7 +66,8 @@ class _SessionPageState extends State<SessionPage> {
       
       if (mounted) {
         setState(() => _isEnding = false);
-        Navigator.popUntil(context, (route) => route.isFirst);
+        // Navigate back to client selection page
+        Navigator.pushReplacementNamed(context, '/start-visit');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
