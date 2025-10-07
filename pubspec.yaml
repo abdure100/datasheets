@@ -28,6 +28,10 @@ dependencies:
   # Local storage
   shared_preferences: ^2.2.2
   
+  # Location services
+  geolocator: ^10.1.0
+  permission_handler: ^11.0.1
+  
   # UI components
   cupertino_icons: ^1.0.6
   

@@ -10,6 +10,7 @@ import '../models/session_record.dart';
 import '../models/behavior_definition.dart';
 import '../models/behavior_log.dart';
 import '../models/staff.dart';
+import 'location_service.dart';
 
 class FileMakerService extends ChangeNotifier {
   static const String baseUrl = 'https://devdb.sphereemr.com/fmi/data/v1';
@@ -488,6 +489,23 @@ class FileMakerService extends ChangeNotifier {
     visitData['Appointment_date'] = '${visit.startTs.month.toString().padLeft(2, '0')}/${visit.startTs.day.toString().padLeft(2, '0')}/${visit.startTs.year}';
     visitData['start_ts'] = visit.startTs.toIso8601String().split('.')[0];
     
+    visitData['update_flagx'] = 5; // Trigger processing in FileMaker
+    
+    // Get current location for start
+    print('Getting current location for visit start...');
+    final location = await LocationService.getCurrentLocation();
+    if (location != null) {
+      visitData['start_latitude'] = location['latitude']!;
+      visitData['start_longitude'] = location['longitude']!;
+      visitData['start_location_accuracy'] = location['accuracy']!;
+      print('Location obtained: ${location['latitude']}, ${location['longitude']}');
+    } else {
+      visitData['start_latitude'] = '0.0';
+      visitData['start_longitude'] = '0.0';
+      visitData['start_location_accuracy'] = '0.0';
+      print('Location not available, using default values');
+    }
+    
     print('Creating visit with Dio - data: $visitData');
     
     try {
@@ -607,18 +625,69 @@ class FileMakerService extends ChangeNotifier {
     await _ensureAuthenticated();
     
     print('=== FILEMAKER CLOSE VISIT REQUEST (DIO) ===');
-    print('Visit ID: $visitId');
+    print('Visit ID (PrimaryKey): $visitId');
     print('End Time: ${endTs.toIso8601String()}');
-    print('Using api_appointments layout...');
+    print('Finding recordId for PrimaryKey...');
     
     try {
-      // Use the api_appointments layout instead of dapi-appointments_new
+      // First, find the recordId using the PrimaryKey
+      final findResponse = await _dio.post(
+        '/databases/$database/layouts/api_appointments/_find',
+        data: {
+          'query': [
+            {'PrimaryKey': '==$visitId'}
+          ]
+        },
+        options: Options(
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $_token',
+            'Accept': 'application/json',
+          },
+        ),
+      );
+      
+      if (findResponse.statusCode != 200) {
+        throw Exception('Failed to find visit record: ${findResponse.statusCode}');
+      }
+      
+      final findData = findResponse.data as Map<String, dynamic>;
+      if (findData['response']['data'] == null || 
+          (findData['response']['data'] as List).isEmpty) {
+        throw Exception('Visit record not found');
+      }
+      
+      final recordData = (findData['response']['data'] as List).first;
+      final recordId = recordData['recordId'];
+      print('Found recordId: $recordId');
+      
+      // Get current location for end
+      print('Getting current location for visit end...');
+      final location = await LocationService.getCurrentLocation();
+      String endLatitude = '0.0';
+      String endLongitude = '0.0';
+      String endAccuracy = '0.0';
+      
+      if (location != null) {
+        endLatitude = location['latitude']!;
+        endLongitude = location['longitude']!;
+        endAccuracy = location['accuracy']!;
+        print('End location obtained: $endLatitude, $endLongitude');
+      } else {
+        print('End location not available, using default values');
+      }
+
+      // Now update using the recordId
       final response = await _dio.patch(
-        '/databases/$database/layouts/api_appointments/records/$visitId',
+        '/databases/$database/layouts/api_appointments/records/$recordId',
         data: {
           'fieldData': {
             'end_ts': endTs.toIso8601String().split('.')[0],
             'statusInput': 'submitted',
+            'update_flagx': 5, // Trigger processing in FileMaker
+            'end_latitude': endLatitude,
+            'end_longitude': endLongitude,
+            'end_location_accuracy': endAccuracy,
           },
         },
         options: Options(

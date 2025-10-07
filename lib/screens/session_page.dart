@@ -65,6 +65,7 @@ class _SessionPageState extends State<SessionPage> {
       sessionProvider.endVisit();
       
       if (mounted) {
+        setState(() => _isEnding = false);
         Navigator.popUntil(context, (route) => route.isFirst);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
