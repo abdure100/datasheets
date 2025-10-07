@@ -2,10 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/client.dart';
 import '../models/visit.dart';
-import '../models/program_assignment.dart';
 import '../models/behavior_definition.dart';
 import '../services/filemaker_service.dart';
-import '../widgets/program_card.dart';
 import '../widgets/behavior_board.dart';
 
 class ManualSessionPage extends StatefulWidget {
@@ -22,15 +20,21 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
   bool _isLoading = false;
   bool _isSaving = false;
   
-  List<ProgramAssignment> _assignments = [];
   List<BehaviorDefinition> _behaviorDefs = [];
   Visit? _createdVisit;
 
   @override
   void initState() {
     super.initState();
-    _loadData();
-    _createVisit(); // Automatically create session
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_createdVisit == null) {
+      _loadData();
+      _createVisit(); // Automatically create session
+    }
   }
 
   Future<void> _loadData() async {
@@ -39,12 +43,10 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
     try {
       final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
       
-      // Load program assignments
-      final assignments = await fileMakerService.getProgramAssignments(_client.id);
-      setState(() => _assignments = assignments);
-      
-      // Load behavior definitions
+      // Load behavior definitions only
+      print('Loading behavior definitions for client: ${_client.id}');
       final behaviorDefs = await fileMakerService.getBehaviorDefinitions(clientId: _client.id);
+      print('Loaded ${behaviorDefs.length} behavior definitions');
       setState(() => _behaviorDefs = behaviorDefs);
       
     } catch (e) {
@@ -261,35 +263,6 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
                     ),
                     const SizedBox(height: 20),
                     
-                    // Program Assignments
-                    if (_assignments.isNotEmpty) ...[
-                      const Text(
-                        'Program Assignments',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      ..._assignments.map((assignment) => Padding(
-                        padding: const EdgeInsets.only(bottom: 8.0),
-                        child: ProgramCard(
-                          assignment: assignment,
-                          visitId: _createdVisit?.id,
-                          clientId: _client.id,
-                          onSave: (data) {
-                            // Handle program data saving
-                            print('Program data saved: $data');
-                          },
-                          onBehaviorLogged: (behaviorLog) {
-                            // Handle behavior logging
-                            print('Behavior logged: ${behaviorLog.behaviorDesc}');
-                          },
-                        ),
-                      )),
-                      const SizedBox(height: 20),
-                    ],
-                    
                     // Behavior Board
                     if (_behaviorDefs.isNotEmpty) ...[
                       const Text(
@@ -308,6 +281,41 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
                           // Handle behavior logging
                           print('Behavior logged: ${behaviorLog.behaviorDesc}');
                         },
+                      ),
+                      const SizedBox(height: 20),
+                    ] else ...[
+                      // Debug info when no behavior definitions
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            children: [
+                              const Icon(
+                                Icons.info_outline,
+                                size: 48,
+                                color: Colors.orange,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'No behavior definitions found for ${_client.name}',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Client ID: ${_client.id}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                       const SizedBox(height: 20),
                     ],
