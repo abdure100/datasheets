@@ -228,7 +228,7 @@ class _StartVisitPageState extends State<StartVisitPage> {
           IconButton(
             onPressed: _isLoading ? null : _testConnection,
             icon: const Icon(Icons.wifi),
-            tooltip: 'Test FileMaker Connection',
+            tooltip: 'Test Connection',
           ),
           // Staff Avatar
           Padding(
