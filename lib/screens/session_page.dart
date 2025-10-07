@@ -101,6 +101,36 @@ class _SessionPageState extends State<SessionPage> {
            '${seconds.toString().padLeft(2, '0')}';
   }
 
+  Future<void> _showEndSessionDialog() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('End Session'),
+          content: const Text(
+            'Are you sure you want to end this session? '
+            'All session data will be saved and the timer will stop.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('End Session'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result == true) {
+      // User confirmed, end the session
+      await _endVisit();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.visit == null || widget.client == null) {
@@ -116,11 +146,7 @@ class _SessionPageState extends State<SessionPage> {
         title: Text(widget.client!.name),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            // End the session and go back
-            _endVisit();
-            Navigator.pop(context);
-          },
+          onPressed: () => _showEndSessionDialog(),
         ),
         actions: [
           Text(
