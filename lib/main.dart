@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'screens/login_page.dart';
 import 'screens/start_visit_page.dart';
 import 'screens/session_page.dart';
+import 'screens/manual_session_page.dart';
 import 'services/filemaker_service.dart';
 import 'providers/session_provider.dart';
 
@@ -53,6 +54,10 @@ class DataSheetsApp extends StatelessWidget {
               visit: args?['visit'],
               client: args?['client'],
             );
+          },
+          '/manual-session': (context) {
+            final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+            return const ManualSessionPage();
           },
         },
       ),
