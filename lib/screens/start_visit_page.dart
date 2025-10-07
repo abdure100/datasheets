@@ -265,34 +265,6 @@ class _StartVisitPageState extends State<StartVisitPage> {
                     ),
                     const SizedBox(height: 20),
 
-                    // Staff Member (Read-only)
-                    TextFormField(
-                      initialValue: _currentStaffName,
-                      decoration: const InputDecoration(
-                        labelText: 'Staff Member',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.work),
-                        filled: true,
-                        fillColor: Color(0xFFF5F5F5),
-                      ),
-                      readOnly: true,
-                    ),
-                    const SizedBox(height: 20),
-
-                    // Service Code (Read-only)
-                    TextFormField(
-                      initialValue: _currentServiceCode,
-                      decoration: const InputDecoration(
-                        labelText: 'Service Code',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.code),
-                        filled: true,
-                        fillColor: Color(0xFFF5F5F5),
-                      ),
-                      readOnly: true,
-                    ),
-                    const SizedBox(height: 20),
-
                     // Test Connection Button
                     OutlinedButton.icon(
                       onPressed: _isLoading ? null : _testConnection,
