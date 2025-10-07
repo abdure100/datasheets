@@ -50,7 +50,11 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
       print('Loading behavior definitions for client: ${_client.id}');
       final behaviorDefs = await fileMakerService.getBehaviorDefinitions(clientId: _client.id);
       print('Loaded ${behaviorDefs.length} behavior definitions');
-      setState(() => _behaviorDefs = behaviorDefs);
+      print('Setting _behaviorDefs to ${behaviorDefs.length} items');
+      setState(() {
+        _behaviorDefs = behaviorDefs;
+        print('After setState: _behaviorDefs.length = ${_behaviorDefs.length}');
+      });
       
     } catch (e) {
       if (mounted) {
@@ -267,6 +271,8 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
                     const SizedBox(height: 20),
                     
                     // Behavior Board
+                    // Debug: Check behavior definitions count
+                    Text('DEBUG: _behaviorDefs.length = ${_behaviorDefs.length}'),
                     if (_behaviorDefs.isNotEmpty) ...[
                       const Text(
                         'Behavior Logging',
