@@ -422,6 +422,7 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
                         visitId: _createdVisit?.id ?? '',
                         clientId: _client.id,
                         assignmentId: null, // General behavior logging
+                        behaviorDefinitions: _behaviorDefs, // Pass the loaded behavior definitions
                         onBehaviorLogged: (behaviorLog) {
                           // Handle behavior logging
                           print('Behavior logged: ${behaviorLog.behaviorDesc}');

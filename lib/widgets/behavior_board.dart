@@ -11,6 +11,7 @@ class BehaviorBoard extends StatefulWidget {
   final String clientId;
   final String? assignmentId; // Optional assignment ID for context-aware logging
   final Function(BehaviorLog) onBehaviorLogged;
+  final List<BehaviorDefinition>? behaviorDefinitions; // Optional - if provided, use these instead of SessionProvider
 
   const BehaviorBoard({
     super.key,
@@ -18,6 +19,7 @@ class BehaviorBoard extends StatefulWidget {
     required this.clientId,
     this.assignmentId, // Optional - if null, allows general behavior logging
     required this.onBehaviorLogged,
+    this.behaviorDefinitions, // Optional - if null, will use SessionProvider
   });
 
   @override
@@ -27,6 +29,11 @@ class BehaviorBoard extends StatefulWidget {
 class _BehaviorBoardState extends State<BehaviorBoard> {
   @override
   Widget build(BuildContext context) {
+    // Use provided behavior definitions if available, otherwise use SessionProvider
+    if (widget.behaviorDefinitions != null) {
+      return _buildBehaviorBoard(widget.behaviorDefinitions!, []);
+    }
+    
     return Consumer<SessionProvider>(
       builder: (context, sessionProvider, child) {
         final behaviorDefs = sessionProvider.behaviorDefinitions;
@@ -34,7 +41,12 @@ class _BehaviorBoardState extends State<BehaviorBoard> {
             .where((log) => log.visitId == widget.visitId)
             .toList();
             
-        // Debug prints removed
+        return _buildBehaviorBoard(behaviorDefs, behaviorLogs);
+      },
+    );
+  }
+
+  Widget _buildBehaviorBoard(List<BehaviorDefinition> behaviorDefs, List<BehaviorLog> behaviorLogs) {
 
         return Card(
           child: Padding(
@@ -110,8 +122,6 @@ class _BehaviorBoardState extends State<BehaviorBoard> {
             ),
           ),
         );
-      },
-    );
   }
 
   Widget _buildLogCard(BehaviorLog log) {
