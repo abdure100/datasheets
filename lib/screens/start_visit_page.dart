@@ -34,6 +34,10 @@ class _StartVisitPageState extends State<StartVisitPage> {
     try {
       final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
       final clients = await fileMakerService.getClients();
+      
+      // Sort clients by namefull alphabetically
+      clients.sort((a, b) => a.name.compareTo(b.name));
+      
       setState(() {
         _clients = clients;
         _isLoading = false;
