@@ -288,6 +288,12 @@ class _StartVisitPageState extends State<StartVisitPage> {
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
+          // Completed Sessions Button
+          IconButton(
+            onPressed: () => Navigator.pushNamed(context, '/completed-sessions'),
+            icon: const Icon(Icons.history),
+            tooltip: 'View Completed Sessions',
+          ),
           // Test Connection Button
           IconButton(
             onPressed: _isLoading ? null : _testConnection,

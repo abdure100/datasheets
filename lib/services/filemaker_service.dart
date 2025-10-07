@@ -1270,4 +1270,92 @@ class FileMakerService extends ChangeNotifier {
     
     notifyListeners();
   }
+
+  // Get completed sessions
+  Future<List<Visit>> getCompletedSessions() async {
+    await _ensureAuthenticated();
+    
+    print('=== FILEMAKER COMPLETED SESSIONS REQUEST (DIO) ===');
+    print('URL: /databases/EIDBI/layouts/api_appointments/_find');
+    print('Query: {query: [{status: ==completed}], limit: 100}');
+    
+    try {
+      final response = await _dio.post(
+        '/databases/EIDBI/layouts/api_appointments/_find',
+        data: {
+          'query': [
+            {'status': '==completed'}
+          ],
+          'limit': 100,
+          'sort': [
+            {'fieldName': 'start_ts', 'sortOrder': 'descend'}
+          ]
+        },
+      );
+      
+      print('=== FILEMAKER COMPLETED SESSIONS RESPONSE (DIO) ===');
+      print('Status Code: ${response.statusCode}');
+      print('Response Data: ${response.data}');
+      
+      if (response.statusCode == 200) {
+        final data = response.data['response']['data'] as List<dynamic>? ?? [];
+        final sessions = data.map((item) {
+          final fieldData = item['fieldData'] as Map<String, dynamic>;
+          return Visit.fromJson(fieldData);
+        }).toList();
+        
+        print('Successfully loaded ${sessions.length} completed sessions');
+        return sessions;
+      } else {
+        throw Exception('Failed to load completed sessions: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error loading completed sessions: $e');
+      rethrow;
+    }
+  }
+
+  // Get behavior logs for a specific visit
+  Future<List<BehaviorLog>> getBehaviorLogsForVisit(String visitId) async {
+    await _ensureAuthenticated();
+    
+    print('=== FILEMAKER BEHAVIOR LOGS FOR VISIT REQUEST (DIO) ===');
+    print('URL: /databases/EIDBI/layouts/api_sessiondata/_find');
+    print('Visit ID: $visitId');
+    
+    try {
+      final response = await _dio.post(
+        '/databases/EIDBI/layouts/api_sessiondata/_find',
+        data: {
+          'query': [
+            {'visitId': '==$visitId'}
+          ],
+          'limit': 100,
+          'sort': [
+            {'fieldName': 'createdAt_ts', 'sortOrder': 'descend'}
+          ]
+        },
+      );
+      
+      print('=== FILEMAKER BEHAVIOR LOGS FOR VISIT RESPONSE (DIO) ===');
+      print('Status Code: ${response.statusCode}');
+      print('Response Data: ${response.data}');
+      
+      if (response.statusCode == 200) {
+        final data = response.data['response']['data'] as List<dynamic>? ?? [];
+        final logs = data.map((item) {
+          final fieldData = item['fieldData'] as Map<String, dynamic>;
+          return BehaviorLog.fromJson(fieldData);
+        }).toList();
+        
+        print('Successfully loaded ${logs.length} behavior logs for visit $visitId');
+        return logs;
+      } else {
+        throw Exception('Failed to load behavior logs: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error loading behavior logs for visit: $e');
+      rethrow;
+    }
+  }
 }
