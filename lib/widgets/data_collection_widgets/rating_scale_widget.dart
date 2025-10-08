@@ -23,10 +23,13 @@ class _RatingScaleWidgetState extends State<RatingScaleWidget> {
   @override
   void initState() {
     super.initState();
-    _rating = (widget.config['rating'] ?? 0).toDouble();
     _minValue = widget.config['minValue'] ?? 1;
     _maxValue = widget.config['maxValue'] ?? 5;
     _label = widget.config['label'] ?? 'Rate the behavior';
+    
+    // Ensure rating is within valid range
+    final configRating = (widget.config['rating'] ?? _minValue).toDouble();
+    _rating = configRating.clamp(_minValue.toDouble(), _maxValue.toDouble());
   }
 
   void _updateData() {

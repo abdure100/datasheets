@@ -141,7 +141,12 @@ class _SessionPageState extends State<SessionPage> {
       );
     }
     
-    return Scaffold(
+    return WillPopScope(
+      onWillPop: () async {
+        await _showEndSessionDialog();
+        return false; // Prevent default back navigation
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: Text(widget.client!.name),
         leading: IconButton(
@@ -154,6 +159,30 @@ class _SessionPageState extends State<SessionPage> {
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(width: 16),
+          // Logout Dropdown
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              if (value == 'logout') {
+                _logout();
+              }
+            },
+            itemBuilder: (BuildContext context) => [
+              const PopupMenuItem<String>(
+                value: 'logout',
+                child: Row(
+                  children: [
+                    Icon(Icons.logout, color: Colors.red),
+                    SizedBox(width: 8),
+                    Text('Logout'),
+                  ],
+                ),
+              ),
+            ],
+            child: const Padding(
+              padding: EdgeInsets.all(8.0),
+              child: Icon(Icons.account_circle),
+            ),
+          ),
         ],
       ),
       body: Consumer<SessionProvider>(
@@ -267,7 +296,6 @@ class _SessionPageState extends State<SessionPage> {
                                 await fileMakerService.evaluateAssignmentMastery(assignment.id!);
                               }
                             } catch (e) {
-                              print('Mastery evaluation error: $e');
                             }
                           }
                           
@@ -320,6 +348,13 @@ class _SessionPageState extends State<SessionPage> {
           );
         },
       ),
+      ),
     );
+  }
+
+  void _logout() {
+    // Clear any stored session data
+    // Navigate back to login page
+    Navigator.pushReplacementNamed(context, '/');
   }
 }

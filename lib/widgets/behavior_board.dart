@@ -265,6 +265,7 @@ class _BehaviorBoardState extends State<BehaviorBoard> {
         visitId: widget.visitId,
         clientId: widget.clientId,
         assignmentId: widget.assignmentId, // Pass assignment context
+        behaviorDefinitions: widget.behaviorDefinitions, // Pass behavior definitions
       ),
     );
     
@@ -282,6 +283,7 @@ class _BehaviorBoardState extends State<BehaviorBoard> {
         clientId: widget.clientId,
         assignmentId: widget.assignmentId, // Pass assignment context
         existingLog: log,
+        behaviorDefinitions: widget.behaviorDefinitions, // Pass behavior definitions
       ),
     );
     

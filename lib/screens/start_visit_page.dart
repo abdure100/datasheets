@@ -153,14 +153,34 @@ class _StartVisitPageState extends State<StartVisitPage> {
     setState(() => _isLoading = true);
     try {
       final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
-      final success = await fileMakerService.authenticate();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(success ? 'Connection successful!' : 'Connection failed. Check console for details.'),
-            backgroundColor: success ? Colors.green : Colors.red,
-          ),
-        );
+      
+      // Validate existing token
+      final isValid = await fileMakerService.validateToken();
+      
+      if (isValid) {
+        // Token is valid, reload clients and show success message
+        await _loadClients();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Connection successful! Clients refreshed.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        // Token is invalid, FileMaker server has already logged us out
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Session expired. Redirecting to login...'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          
+          // Navigate to login page (FileMaker server already logged us out)
+          Navigator.pushReplacementNamed(context, '/');
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -216,7 +236,7 @@ class _StartVisitPageState extends State<StartVisitPage> {
         serviceCode: _currentServiceCode,
         startTs: startDateTime,
         endTs: endDateTime,
-        status: _isHistoricalMode ? 'completed' : 'in_progress',
+        status: 'in_progress',
       );
 
       final createdVisit = await fileMakerService.createVisitWithDio(visit, skipLocation: _isHistoricalMode);
@@ -228,18 +248,14 @@ class _StartVisitPageState extends State<StartVisitPage> {
       try {
         final assignments = await fileMakerService.getProgramAssignments(_selectedClient!.id);
         sessionProvider.setActiveAssignments(assignments);
-        print('Loaded ${assignments.length} program assignments');
       } catch (e) {
-        print('Error loading program assignments: $e');
         // Continue without assignments
       }
       
       try {
         final behaviorDefs = await fileMakerService.getBehaviorDefinitions(clientId: _selectedClient!.id);
         sessionProvider.setBehaviorDefinitions(behaviorDefs);
-        print('Loaded ${behaviorDefs.length} behavior definitions');
       } catch (e) {
-        print('Error loading behavior definitions: $e');
         // Continue without behavior definitions
       }
 
@@ -294,24 +310,43 @@ class _StartVisitPageState extends State<StartVisitPage> {
             icon: const Icon(Icons.history),
             tooltip: 'View Completed Sessions',
           ),
-          // Test Connection Button
+          // Refresh/Validate Session Button
           IconButton(
             onPressed: _isLoading ? null : _testConnection,
-            icon: const Icon(Icons.wifi),
-            tooltip: 'Test Connection',
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh & Validate Session',
           ),
-          // Staff Avatar
+          // Staff Avatar with Dropdown
           Padding(
             padding: const EdgeInsets.only(right: 16.0),
-            child: CircleAvatar(
-              radius: 18,
-              backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
-              child: Text(
-                _currentStaffName.isNotEmpty ? _currentStaffName[0].toUpperCase() : '?',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Theme.of(context).primaryColor,
+            child: PopupMenuButton<String>(
+              onSelected: (value) {
+                if (value == 'logout') {
+                  _logout();
+                }
+              },
+              itemBuilder: (BuildContext context) => [
+                const PopupMenuItem<String>(
+                  value: 'logout',
+                  child: Row(
+                    children: [
+                      Icon(Icons.logout, color: Colors.red),
+                      SizedBox(width: 8),
+                      Text('Logout'),
+                    ],
+                  ),
+                ),
+              ],
+              child: CircleAvatar(
+                radius: 18,
+                backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
+                child: Text(
+                  _currentStaffName.isNotEmpty ? _currentStaffName[0].toUpperCase() : '?',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).primaryColor,
+                  ),
                 ),
               ),
             ),
@@ -338,51 +373,61 @@ class _StartVisitPageState extends State<StartVisitPage> {
                     ),
                     const SizedBox(height: 20),
                     
-                    // Historical Entry Mode Toggle
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
+                    // Historical Entry Mode Toggle (only show if staff has permission)
+                    Consumer<FileMakerService>(
+                      builder: (context, fileMakerService, child) {
+                        final canManualEntry = fileMakerService.currentStaffCanManualEntry ?? false;
+                        
+                        if (!canManualEntry) {
+                          return const SizedBox.shrink(); // Hide the toggle if no permission
+                        }
+                        
+                        return Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Icon(
-                                  Icons.history,
-                                  color: _isHistoricalMode ? Theme.of(context).primaryColor : Colors.grey,
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.history,
+                                      color: _isHistoricalMode ? Theme.of(context).primaryColor : Colors.grey,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    const Text(
+                                      'Manual Entry Mode',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Switch(
+                                      value: _isHistoricalMode,
+                                      onChanged: (value) {
+                                        setState(() {
+                                          _isHistoricalMode = value;
+                                        });
+                                      },
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(width: 8),
-                                const Text(
-                                  'Manual Entry Mode',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w500,
+                                if (_isHistoricalMode) ...[
+                                  const SizedBox(height: 16),
+                                  const Text(
+                                    'Enter session data manually with start and end times',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.grey,
+                                    ),
                                   ),
-                                ),
-                                const Spacer(),
-                                Switch(
-                                  value: _isHistoricalMode,
-                                  onChanged: (value) {
-                                    setState(() {
-                                      _isHistoricalMode = value;
-                                    });
-                                  },
-                                ),
+                                ],
                               ],
                             ),
-                            if (_isHistoricalMode) ...[
-                              const SizedBox(height: 16),
-                              const Text(
-                                'Enter session data manually with start and end times',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
+                          ),
+                        );
+                      },
                     ),
                     const SizedBox(height: 20),
                     
@@ -411,5 +456,11 @@ class _StartVisitPageState extends State<StartVisitPage> {
               ),
             ),
     );
+  }
+
+  void _logout() {
+    // Clear any stored session data
+    // Navigate back to login page
+    Navigator.pushReplacementNamed(context, '/');
   }
 }

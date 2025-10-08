@@ -49,7 +49,6 @@ class BehaviorDefinition {
       try {
         return Map<String, dynamic>.from(jsonDecode(json));
       } catch (e) {
-        print('Error parsing severityScaleJson: $e');
         return {};
       }
     }

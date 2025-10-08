@@ -29,6 +29,7 @@ BehaviorLog _$BehaviorLogFromJson(Map<String, dynamic> json) => BehaviorLog(
       collector: json['collector'] as String?,
       createdAt: BehaviorLog._dateTimeFromJsonNonNull(json['createdAt_ts']),
       updatedAt: BehaviorLog._dateTimeFromJsonNonNull(json['updatedAt_ts']),
+      behaviorName: json['behavior_name'] as String?,
     );
 
 Map<String, dynamic> _$BehaviorLogToJson(BehaviorLog instance) =>

@@ -19,9 +19,7 @@ class _LoginPageState extends State<LoginPage> {
   @override
   void initState() {
     super.initState();
-    // Pre-populate with demo credentials for easier testing
-    _usernameController.text = 'nafisa@test.com';
-    _passwordController.text = 'Welcome123\$';
+    // Initialize with empty fields for production
   }
 
   @override
@@ -62,13 +60,8 @@ class _LoginPageState extends State<LoginPage> {
         throw Exception('Account is inactive');
       }
       
-      print('Login successful for: ${staff.name} (${staff.email})');
       
       // Display session variables
-      print('=== SESSION VARIABLES AVAILABLE ===');
-      print('Staff ID: ${fileMakerService.currentStaffId}');
-      print('Company ID: ${fileMakerService.currentCompanyId}');
-      print('===================================');
       
       if (mounted) {
         Navigator.pushReplacementNamed(context, '/start-visit');
@@ -204,36 +197,6 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                       ),
                       const SizedBox(height: 16),
-
-                      // Demo Credentials Info
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.blue[50],
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.blue[200]!),
-                        ),
-                        child: Column(
-                          children: [
-                            Text(
-                              'Demo Credentials',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.blue[800],
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Email: nafisa@test.com\nPassword: Welcome123\$',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.blue[700],
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
-                        ),
-                      ),
                     ],
                   ),
                 ),

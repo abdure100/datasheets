@@ -69,6 +69,9 @@ class BehaviorLog {
   
   @JsonKey(name: 'updatedAt_ts', fromJson: _dateTimeFromJsonNonNull, toJson: _dateTimeToJson)
   final DateTime updatedAt;
+  
+  @JsonKey(name: 'behavior_name', includeToJson: false)
+  final String? behaviorName;
 
   const BehaviorLog({
     required this.id,
@@ -93,6 +96,7 @@ class BehaviorLog {
     this.collector,
     required this.createdAt,
     required this.updatedAt,
+    this.behaviorName,
   });
 
   factory BehaviorLog.fromJson(Map<String, dynamic> json) => _$BehaviorLogFromJson(json);
@@ -121,6 +125,7 @@ class BehaviorLog {
     String? collector,
     DateTime? createdAt,
     DateTime? updatedAt,
+    String? behaviorName,
   }) {
     return BehaviorLog(
       id: id ?? this.id,
@@ -145,6 +150,7 @@ class BehaviorLog {
       collector: collector ?? this.collector,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      behaviorName: behaviorName ?? this.behaviorName,
     );
   }
 

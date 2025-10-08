@@ -5,7 +5,6 @@ part 'visit.g.dart';
 String? _dateTimeToFileMakerString(DateTime? dateTime) {
   if (dateTime == null) return null;
   final formatted = '${dateTime.month.toString().padLeft(2, '0')}/${dateTime.day.toString().padLeft(2, '0')}/${dateTime.year} ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}:${dateTime.second.toString().padLeft(2, '0')}';
-  print('Formatting DateTime: $dateTime -> $formatted');
   return formatted;
 }
 
@@ -35,6 +34,12 @@ class Visit {
   final String? appointmentDate;
   @JsonKey(name: 'time_in', includeToJson: false)
   final String? timeIn;
+  @JsonKey(name: 'Patient_name', includeToJson: false)
+  final String? clientName;
+  @JsonKey(name: 'assignedto_name', includeToJson: false)
+  final String? staffName;
+  @JsonKey(name: 'submitterIPAddress', includeToJson: false)
+  final String? submitterIPAddress;
 
   const Visit({
     required this.id,
@@ -49,6 +54,9 @@ class Visit {
     this.notes,
     this.appointmentDate,
     this.timeIn,
+    this.clientName,
+    this.staffName,
+    this.submitterIPAddress,
   });
 
   factory Visit.fromJson(Map<String, dynamic> json) => _$VisitFromJson(json);
@@ -67,6 +75,9 @@ class Visit {
     String? notes,
     String? appointmentDate,
     String? timeIn,
+    String? clientName,
+    String? staffName,
+    String? submitterIPAddress,
   }) {
     return Visit(
       id: id ?? this.id,
@@ -81,6 +92,9 @@ class Visit {
       notes: notes ?? this.notes,
       appointmentDate: appointmentDate ?? this.appointmentDate,
       timeIn: timeIn ?? this.timeIn,
+      clientName: clientName ?? this.clientName,
+      staffName: staffName ?? this.staffName,
+      submitterIPAddress: submitterIPAddress ?? this.submitterIPAddress,
     );
   }
 

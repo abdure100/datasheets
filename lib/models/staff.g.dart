@@ -13,6 +13,7 @@ Staff _$StaffFromJson(Map<String, dynamic> json) => Staff(
       name: json['FullName'] as String,
       role: json['role'] as String?,
       active: json['active'] as bool?,
+      allowManualEntry: (json['Allow_manual_entry'] as num?)?.toInt(),
     );
 
 Map<String, dynamic> _$StaffToJson(Staff instance) => <String, dynamic>{
@@ -22,4 +23,5 @@ Map<String, dynamic> _$StaffToJson(Staff instance) => <String, dynamic>{
       'FullName': instance.name,
       'role': instance.role,
       'active': instance.active,
+      'Allow_manual_entry': instance.allowManualEntry,
     };

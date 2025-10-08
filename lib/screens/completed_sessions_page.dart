@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/visit.dart';
-import '../models/client.dart';
 import '../services/filemaker_service.dart';
-import 'session_details_page.dart';
 
 class CompletedSessionsPage extends StatefulWidget {
   const CompletedSessionsPage({super.key});
@@ -64,6 +62,30 @@ class _CompletedSessionsPageState extends State<CompletedSessionsPage> {
             onPressed: _loadCompletedSessions,
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh',
+          ),
+          // Logout Dropdown
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              if (value == 'logout') {
+                _logout();
+              }
+            },
+            itemBuilder: (BuildContext context) => [
+              const PopupMenuItem<String>(
+                value: 'logout',
+                child: Row(
+                  children: [
+                    Icon(Icons.logout, color: Colors.red),
+                    SizedBox(width: 8),
+                    Text('Logout'),
+                  ],
+                ),
+              ),
+            ],
+            child: const Padding(
+              padding: EdgeInsets.all(8.0),
+              child: Icon(Icons.account_circle, color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -162,15 +184,17 @@ class _CompletedSessionsPageState extends State<CompletedSessionsPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Date: ${_formatDate(session.startTs)}'),
-            Text('Time: ${_formatTime(session.startTs)} - ${_formatTime(session.endTs)}'),
-            if (session.staffName != null)
+            if (session.endTs != null)
+              Text('Time: ${_formatTime(session.startTs)} - ${_formatTime(session.endTs)}')
+            else Text('Start: ${_formatTime(session.startTs)}'),
+            if (session.staffName != null && session.staffName!.isNotEmpty)
               Text('Staff: ${session.staffName}'),
           ],
         ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (session.status == 'completed')
+            if (session.status == 'Submitted')
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
@@ -211,5 +235,11 @@ class _CompletedSessionsPageState extends State<CompletedSessionsPage> {
       '/session-details',
       arguments: {'session': session},
     );
+  }
+
+  void _logout() {
+    // Clear any stored session data
+    // Navigate back to login page
+    Navigator.pushReplacementNamed(context, '/');
   }
 }

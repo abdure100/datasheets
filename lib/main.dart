@@ -25,6 +25,7 @@ class DataSheetsApp extends StatelessWidget {
       ],
       child: MaterialApp(
         title: 'ABA Data Collection',
+        debugShowCheckedModeBanner: false,
         theme: ThemeData(
           primarySwatch: Colors.blue,
           visualDensity: VisualDensity.adaptivePlatformDensity,

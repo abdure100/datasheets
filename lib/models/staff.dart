@@ -16,6 +16,8 @@ class Staff {
   final String? role;
   @JsonKey(name: 'active')
   final bool? active;
+  @JsonKey(name: 'Allow_manual_entry')
+  final int? allowManualEntry;
 
   const Staff({
     required this.id,
@@ -24,10 +26,13 @@ class Staff {
     required this.name,
     this.role,
     this.active,
+    this.allowManualEntry,
   });
 
   factory Staff.fromJson(Map<String, dynamic> json) => _$StaffFromJson(json);
   Map<String, dynamic> toJson() => _$StaffToJson(this);
+
+  bool get canManualEntry => allowManualEntry == 1;
 
   @override
   String toString() => name;

@@ -18,9 +18,11 @@ class TimeSamplingWidget extends StatefulWidget {
 class _TimeSamplingWidgetState extends State<TimeSamplingWidget> {
   List<bool> _samples = [];
   Timer? _timer;
+  Timer? _countdownTimer;
   bool _isRunning = false;
   int _currentInterval = 0;
   int _intervalSeconds = 30; // Default 30 seconds
+  int _countdownSeconds = 0;
 
   @override
   void initState() {
@@ -32,13 +34,26 @@ class _TimeSamplingWidgetState extends State<TimeSamplingWidget> {
   @override
   void dispose() {
     _timer?.cancel();
+    _countdownTimer?.cancel();
     super.dispose();
   }
 
   void _startSampling() {
     if (_isRunning) return;
     
-    setState(() => _isRunning = true);
+    setState(() {
+      _isRunning = true;
+      _countdownSeconds = _intervalSeconds;
+    });
+    
+    // Start countdown timer
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      setState(() {
+        _countdownSeconds--;
+      });
+    });
+    
+    // Start sampling timer
     _timer = Timer.periodic(Duration(seconds: _intervalSeconds), (timer) {
       _promptSample();
     });
@@ -46,7 +61,11 @@ class _TimeSamplingWidgetState extends State<TimeSamplingWidget> {
 
   void _stopSampling() {
     _timer?.cancel();
-    setState(() => _isRunning = false);
+    _countdownTimer?.cancel();
+    setState(() {
+      _isRunning = false;
+      _countdownSeconds = 0;
+    });
     _updateData();
   }
 
@@ -81,17 +100,20 @@ class _TimeSamplingWidgetState extends State<TimeSamplingWidget> {
     setState(() {
       _samples.add(onTask);
       _currentInterval++;
+      _countdownSeconds = _intervalSeconds; // Reset countdown for next interval
     });
     _updateData();
   }
 
   void _resetSamples() {
+    _timer?.cancel();
+    _countdownTimer?.cancel();
     setState(() {
       _samples.clear();
       _currentInterval = 0;
       _isRunning = false;
+      _countdownSeconds = 0;
     });
-    _timer?.cancel();
     _updateData();
   }
 
@@ -150,11 +172,39 @@ class _TimeSamplingWidgetState extends State<TimeSamplingWidget> {
               },
             ),
             const SizedBox(width: 16),
-            Text('Next sample in: ${_isRunning ? '${_intervalSeconds - (_currentInterval * _intervalSeconds % _intervalSeconds)}s' : 'Not running'}'),
+            Text(_isRunning ? 'Next sample in: ${_countdownSeconds}s' : 'Not running'),
           ],
         ),
         
         const SizedBox(height: 12),
+        
+        // Countdown Display
+        if (_isRunning) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue[50],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.blue[200]!),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.timer, color: Colors.blue[700]),
+                const SizedBox(width: 8),
+                Text(
+                  'Next sample in: ${_countdownSeconds}s',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue[700],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
         
         // Progress Bar
         LinearProgressIndicator(

@@ -40,28 +40,7 @@ class _TaskAnalysisWidgetState extends State<TaskAnalysisWidget> {
     _updateData();
   }
 
-  void _addStep() {
-    setState(() {
-      _steps.add(false);
-    });
-    _updateData();
-  }
-
-  void _removeStep(int index) {
-    if (_steps.length > 1) {
-      setState(() {
-        _steps.removeAt(index);
-      });
-      _updateData();
-    }
-  }
-
-  void _resetSteps() {
-    setState(() {
-      _steps = List.filled(_steps.length, false);
-    });
-    _updateData();
-  }
+  // Step management methods removed - using fixed step configuration
 
   int get _completedSteps => _steps.where((step) => step).length;
   double get _percentComplete => _steps.isEmpty ? 0.0 : (_completedSteps / _steps.length * 100);
@@ -114,12 +93,6 @@ class _TaskAnalysisWidgetState extends State<TaskAnalysisWidget> {
                 onChanged: (_) => _toggleStep(index),
               ),
               title: Text('Step ${index + 1}'),
-              trailing: _steps.length > 1
-                  ? IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.red),
-                      onPressed: () => _removeStep(index),
-                    )
-                  : null,
               tileColor: isCompleted ? Colors.green[50] : null,
             ),
           );
@@ -127,26 +100,7 @@ class _TaskAnalysisWidgetState extends State<TaskAnalysisWidget> {
         
         const SizedBox(height: 16),
         
-        // Control Buttons
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _addStep,
-                icon: const Icon(Icons.add),
-                label: const Text('Add Step'),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _resetSteps,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Reset'),
-              ),
-            ),
-          ],
-        ),
+        // Control buttons removed - using fixed step configuration
       ],
     );
   }

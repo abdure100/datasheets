@@ -54,6 +54,32 @@ class _SessionDetailsPageState extends State<SessionDetailsPage> {
         title: const Text('Session Details'),
         backgroundColor: Colors.blue[700],
         foregroundColor: Colors.white,
+        actions: [
+          // Logout Dropdown
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              if (value == 'logout') {
+                _logout();
+              }
+            },
+            itemBuilder: (BuildContext context) => [
+              const PopupMenuItem<String>(
+                value: 'logout',
+                child: Row(
+                  children: [
+                    Icon(Icons.logout, color: Colors.red),
+                    SizedBox(width: 8),
+                    Text('Logout'),
+                  ],
+                ),
+              ),
+            ],
+            child: const Padding(
+              padding: EdgeInsets.all(8.0),
+              child: Icon(Icons.account_circle, color: Colors.white),
+            ),
+          ),
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -131,11 +157,13 @@ class _SessionDetailsPageState extends State<SessionDetailsPage> {
             const SizedBox(height: 16),
             _buildInfoRow('Date', _formatDate(widget.session.startTs)),
             _buildInfoRow('Start Time', _formatTime(widget.session.startTs)),
-            _buildInfoRow('End Time', _formatTime(widget.session.endTs)),
-            _buildInfoRow('Duration', _calculateDuration()),
-            if (widget.session.staffName != null)
+            if (widget.session.endTs != null)
+              _buildInfoRow('End Time', _formatTime(widget.session.endTs)),
+            if (widget.session.endTs != null)
+              _buildInfoRow('Duration', _calculateDuration()),
+            if (widget.session.staffName != null && widget.session.staffName!.isNotEmpty)
               _buildInfoRow('Staff', widget.session.staffName!),
-            if (widget.session.notes?.isNotEmpty == true)
+            if (widget.session.notes != null && widget.session.notes!.isNotEmpty)
               _buildInfoRow('Notes', widget.session.notes!),
           ],
         ),
@@ -270,23 +298,23 @@ class _SessionDetailsPageState extends State<SessionDetailsPage> {
                 ),
               ],
             ),
-            if (log.count != null) ...[
+            if (log.count != null && log.count! > 0) ...[
               const SizedBox(height: 8),
               Text('Count: ${log.count}'),
             ],
-            if (log.durationSec != null) ...[
+            if (log.durationSec != null && log.durationSec! > 0) ...[
               const SizedBox(height: 4),
               Text('Duration: ${log.durationSec}s'),
             ],
-            if (log.antecedent?.isNotEmpty == true) ...[
+            if (log.antecedent != null && log.antecedent!.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text('Antecedent: ${log.antecedent}'),
             ],
-            if (log.behaviorDesc?.isNotEmpty == true) ...[
+            if (log.behaviorDesc != null && log.behaviorDesc!.isNotEmpty) ...[
               const SizedBox(height: 4),
               Text('Behavior: ${log.behaviorDesc}'),
             ],
-            if (log.consequence?.isNotEmpty == true) ...[
+            if (log.consequence != null && log.consequence!.isNotEmpty) ...[
               const SizedBox(height: 4),
               Text('Consequence: ${log.consequence}'),
             ],
@@ -338,11 +366,11 @@ class _SessionDetailsPageState extends State<SessionDetailsPage> {
   }
 
   String _calculateDuration() {
-    if (widget.session.startTs == null || widget.session.endTs == null) {
+    if (widget.session.endTs == null) {
       return 'Unknown';
     }
     
-    final duration = widget.session.endTs!.difference(widget.session.startTs!);
+    final duration = widget.session.endTs!.difference(widget.session.startTs);
     final hours = duration.inHours;
     final minutes = duration.inMinutes.remainder(60);
     
@@ -351,5 +379,11 @@ class _SessionDetailsPageState extends State<SessionDetailsPage> {
     } else {
       return '${minutes}m';
     }
+  }
+
+  void _logout() {
+    // Clear any stored session data
+    // Navigate back to login page
+    Navigator.pushReplacementNamed(context, '/');
   }
 }

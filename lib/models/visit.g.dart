@@ -21,6 +21,9 @@ Visit _$VisitFromJson(Map<String, dynamic> json) => Visit(
       notes: json['notes'] as String?,
       appointmentDate: json['Appointment_date'] as String?,
       timeIn: json['time_in'] as String?,
+      clientName: json['Patient_name'] as String?,
+      staffName: json['assignedto_name'] as String?,
+      submitterIPAddress: json['submitterIPAddress'] as String?,
     );
 
 Map<String, dynamic> _$VisitToJson(Visit instance) => <String, dynamic>{

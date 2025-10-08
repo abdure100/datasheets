@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:convert';
 import '../models/client.dart';
 import '../models/visit.dart';
 import '../models/program_assignment.dart';
@@ -102,6 +103,8 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
     if (picked != null && picked != _selectedTimeIn) {
       setState(() {
         _selectedTimeIn = picked;
+        // Validate that time out is after time in
+        _validateTimeOut();
       });
     }
   }
@@ -114,12 +117,39 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
     if (picked != null && picked != _selectedTimeOut) {
       setState(() {
         _selectedTimeOut = picked;
+        // Validate that time out is after time in
+        _validateTimeOut();
       });
     }
   }
 
   String _formatTime(TimeOfDay time) {
     return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  }
+
+  void _validateTimeOut() {
+    final timeInMinutes = _selectedTimeIn.hour * 60 + _selectedTimeIn.minute;
+    final timeOutMinutes = _selectedTimeOut.hour * 60 + _selectedTimeOut.minute;
+    
+    if (timeOutMinutes <= timeInMinutes) {
+      // If time out is not after time in, set it to 1 hour later
+      final newTimeOutMinutes = timeInMinutes + 60; // Add 1 hour
+      final newHour = (newTimeOutMinutes / 60).floor();
+      final newMinute = newTimeOutMinutes % 60;
+      
+      setState(() {
+        _selectedTimeOut = TimeOfDay(hour: newHour, minute: newMinute);
+      });
+      
+      // Show warning message
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Time Out must be after Time In. Adjusted to 1 hour later.'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
   }
 
   Future<void> _createVisit() async {
@@ -151,7 +181,7 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
         serviceCode: 'Intervention (97153)',
         startTs: startDateTime,
         endTs: endDateTime,
-        status: 'completed',
+        status: 'in_progress',
       );
 
       final createdVisit = await fileMakerService.createVisitWithDio(visit, skipLocation: true);
@@ -180,8 +210,9 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
     setState(() => _isSaving = true);
     
     try {
-      // Save session data here
-      // This would include saving any program data and behavior logs
+      // Update visit status to Submitted when session is completed
+      final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
+      await fileMakerService.closeVisit(_createdVisit!.id, DateTime.now());
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -191,8 +222,13 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
           ),
         );
         
+        // Add a small delay to ensure the snackbar is shown
+        await Future.delayed(const Duration(milliseconds: 500));
+        
         // Navigate back to client selection
-        Navigator.popUntil(context, (route) => route.isFirst);
+        if (mounted) {
+          Navigator.popUntil(context, (route) => route.isFirst);
+        }
       }
       
     } catch (e) {
@@ -211,15 +247,46 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
     final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
     _client = args?['client'] as Client;
 
-    return Scaffold(
+    return WillPopScope(
+      onWillPop: () async {
+        await _showBackWarningDialog();
+        return false; // Prevent default back navigation
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: Text('Manual Session - ${_client.name}'),
         backgroundColor: Colors.orange,
         foregroundColor: Colors.white,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => _showBackWarningDialog(),
         ),
+        actions: [
+          // Logout Dropdown
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              if (value == 'logout') {
+                _logout();
+              }
+            },
+            itemBuilder: (BuildContext context) => [
+              const PopupMenuItem<String>(
+                value: 'logout',
+                child: Row(
+                  children: [
+                    Icon(Icons.logout, color: Colors.red),
+                    SizedBox(width: 8),
+                    Text('Logout'),
+                  ],
+                ),
+              ),
+            ],
+            child: const Padding(
+              padding: EdgeInsets.all(8.0),
+              child: Icon(Icons.account_circle, color: Colors.white),
+            ),
+          ),
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -383,13 +450,12 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
                           assignment: assignment,
                           visitId: _createdVisit?.id,
                           clientId: _client.id,
-                          onSave: (data) {
+                          onSave: (data) async {
                             // Handle program data saving
-                            print('Program data saved: $data');
+                            await _saveProgramData(assignment.id ?? '', data);
                           },
                           onBehaviorLogged: (behaviorLog) {
                             // Handle behavior logging
-                            print('Behavior logged: ${behaviorLog.behaviorDesc}');
                           },
                         ),
                       )),
@@ -413,12 +479,11 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
                         behaviorDefinitions: _behaviorDefs, // Pass the loaded behavior definitions
                         onBehaviorLogged: (behaviorLog) {
                           // Handle behavior logging
-                          print('Behavior logged: ${behaviorLog.behaviorDesc}');
                         },
                       ),
                       const SizedBox(height: 20),
                     ] else ...[
-                      // Debug info when no behavior definitions
+                      // No behavior definitions available
                       Card(
                         child: Padding(
                           padding: const EdgeInsets.all(16.0),
@@ -439,9 +504,9 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
                                 textAlign: TextAlign.center,
                               ),
                               const SizedBox(height: 8),
-                              Text(
-                                'Client ID: ${_client.id}',
-                                style: const TextStyle(
+                              const Text(
+                                'Please contact your administrator to set up behavior definitions for this client.',
+                                style: TextStyle(
                                   fontSize: 12,
                                   color: Colors.grey,
                                 ),
@@ -458,7 +523,7 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed: _isSaving ? null : _saveSession,
+                        onPressed: _isSaving ? null : _showSaveAndCloseDialog,
                         icon: _isSaving 
                             ? const SizedBox(
                                 width: 16,
@@ -466,7 +531,7 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
                                 child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                               )
                             : const Icon(Icons.save),
-                        label: Text(_isSaving ? 'Saving...' : 'Save Session'),
+                        label: Text(_isSaving ? 'Saving...' : 'Save and Close'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.green,
                           foregroundColor: Colors.white,
@@ -479,6 +544,127 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
                 ),
               ),
             ),
+      ),
     );
+  }
+
+  Future<void> _showBackWarningDialog() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Unsaved Data'),
+          content: const Text(
+            'You have unsaved data that will be lost. Do you want to continue?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Yes, Delete Data'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result == true) {
+      // Delete logs related to this visitId
+      await _deleteVisitLogs();
+      // Go back to client list
+      Navigator.pop(context);
+    }
+  }
+
+  Future<void> _showSaveAndCloseDialog() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Save and Close'),
+          content: const Text(
+            'Are you sure you want to save and close this session?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Yes, Save and Close'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result == true) {
+      // Save the session and go back to client list
+      await _saveSession();
+      // Navigation is handled by _saveSession() method
+    }
+  }
+
+  Future<void> _saveProgramData(String assignmentId, Map<String, dynamic> data) async {
+    if (_createdVisit?.id == null) return;
+    
+    try {
+      final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
+      
+      // Create session record with program data
+      final sessionRecord = {
+        'visitId': _createdVisit!.id,
+        'clientId': _client.id,
+        'assignmentId': assignmentId,
+        'startedAt_ts': DateTime.now().toIso8601String().split('.')[0],
+        'payload_json': jsonEncode(data),
+        'staffId': fileMakerService.currentStaffId,
+      };
+      
+      await fileMakerService.createSessionRecord(sessionRecord);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Program data saved successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error saving program data: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteVisitLogs() async {
+    if (_createdVisit?.id == null) return;
+    
+    try {
+      final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
+      // Delete behavior logs for this visit
+      await fileMakerService.deleteBehaviorLogsForVisit(_createdVisit!.id);
+      // Delete the visit itself
+      await fileMakerService.deleteVisit(_createdVisit!.id);
+    } catch (e) {
+    }
+  }
+
+
+
+  void _logout() {
+    // Clear any stored session data
+    // Navigate back to login page
+    Navigator.pushReplacementNamed(context, '/');
   }
 }

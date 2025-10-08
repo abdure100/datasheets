@@ -36,11 +36,13 @@ class ProgramCard extends StatefulWidget {
 class _ProgramCardState extends State<ProgramCard> {
   Map<String, dynamic> _currentData = {};
   bool _isSaving = false;
+  Map<String, dynamic> _originalData = {};
 
   @override
   void initState() {
     super.initState();
-    _currentData = widget.assignment.config;
+    _currentData = Map<String, dynamic>.from(widget.assignment.config);
+    _originalData = Map<String, dynamic>.from(widget.assignment.config);
   }
 
   Widget _buildDataCollectionWidget() {
@@ -163,6 +165,11 @@ class _ProgramCardState extends State<ProgramCard> {
     }
   }
 
+  bool _hasUnsavedData() {
+    // Compare current data with original data
+    return _currentData.toString() != _originalData.toString();
+  }
+
   Future<void> _saveData() async {
     if (_isSaving) return;
     
@@ -174,7 +181,8 @@ class _ProgramCardState extends State<ProgramCard> {
       
       // Reset data after successful save
       setState(() {
-        _currentData = widget.assignment.config;
+        _currentData = Map<String, dynamic>.from(widget.assignment.config);
+        _originalData = Map<String, dynamic>.from(widget.assignment.config);
       });
     } finally {
       setState(() => _isSaving = false);
@@ -227,12 +235,46 @@ class _ProgramCardState extends State<ProgramCard> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            widget.assignment.name ?? 'Unnamed Program',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
+                          Row(
+                            children: [
+                              Text(
+                                widget.assignment.name ?? 'Unnamed Program',
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              if (_hasUnsavedData()) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange[100],
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: Colors.orange[300]!),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.edit,
+                                        size: 12,
+                                        color: Colors.orange[700],
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'Unsaved',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.orange[700],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                           Text(
                             widget.assignment.dataType ?? 'Unknown',
@@ -299,6 +341,10 @@ class _ProgramCardState extends State<ProgramCard> {
                           )
                         : const Icon(Icons.save),
                     label: Text(_isSaving ? 'Saving...' : 'Save Data'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _hasUnsavedData() ? Colors.orange : Colors.blue,
+                      foregroundColor: Colors.white,
+                    ),
                   ),
                 ),
                 
@@ -369,4 +415,5 @@ class _ProgramCardState extends State<ProgramCard> {
         return 'Data collected';
     }
   }
+
 }

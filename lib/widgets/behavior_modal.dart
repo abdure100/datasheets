@@ -11,6 +11,7 @@ class BehaviorModal extends StatefulWidget {
   final String clientId;
   final String? assignmentId; // Optional assignment ID for context
   final BehaviorLog? existingLog;
+  final List<BehaviorDefinition>? behaviorDefinitions; // Optional - if provided, use these instead of SessionProvider
 
   const BehaviorModal({
     super.key,
@@ -18,6 +19,7 @@ class BehaviorModal extends StatefulWidget {
     required this.clientId,
     this.assignmentId, // Optional - if null, allows general behavior logging
     this.existingLog,
+    this.behaviorDefinitions, // Optional - if null, will use SessionProvider
   });
 
   @override
@@ -31,7 +33,7 @@ class _BehaviorModalState extends State<BehaviorModal> {
   int _count = 0;
   int _durationSeconds = 0;
   Timer? _timer;
-  bool _isTiming = false;
+  bool _isTiming = false; // Timer disabled for manual behavior logging
   String _antecedent = '';
   String _behavior = '';
   String _consequence = '';
@@ -53,7 +55,7 @@ class _BehaviorModalState extends State<BehaviorModal> {
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _timer?.cancel(); // Clean up any existing timer
     super.dispose();
   }
 
@@ -103,6 +105,21 @@ class _BehaviorModalState extends State<BehaviorModal> {
       _durationSeconds = 0;
       _isTiming = false;
     });
+  }
+
+  String _formatDuration(int seconds) {
+    final hours = seconds ~/ 3600;
+    final minutes = (seconds % 3600) ~/ 60;
+    final secs = seconds % 60;
+    
+    if (hours > 0) {
+      return '${hours.toString().padLeft(2, '0')}:'
+             '${minutes.toString().padLeft(2, '0')}:'
+             '${secs.toString().padLeft(2, '0')}';
+    } else {
+      return '${minutes.toString().padLeft(2, '0')}:'
+             '${secs.toString().padLeft(2, '0')}';
+    }
   }
 
   Future<void> _saveBehaviorLog() async {
@@ -168,11 +185,21 @@ class _BehaviorModalState extends State<BehaviorModal> {
 
   @override
   Widget build(BuildContext context) {
+    // Use provided behavior definitions if available, otherwise use SessionProvider
+    if (widget.behaviorDefinitions != null) {
+      return _buildModalContent(widget.behaviorDefinitions!);
+    }
+    
     return Consumer<SessionProvider>(
       builder: (context, sessionProvider, child) {
         final behaviorDefs = sessionProvider.behaviorDefinitions;
-        
-        return Container(
+        return _buildModalContent(behaviorDefs);
+      },
+    );
+  }
+
+  Widget _buildModalContent(List<BehaviorDefinition> behaviorDefs) {
+    return Container(
           height: MediaQuery.of(context).size.height * 0.9,
           padding: const EdgeInsets.all(16.0),
           child: Form(
@@ -312,7 +339,7 @@ class _BehaviorModalState extends State<BehaviorModal> {
                           ),
                         ],
                         
-                        // Duration Input
+                        // Duration Input with Timer Option
                         if (_logType == 'duration') ...[
                           Container(
                             padding: const EdgeInsets.all(16),
@@ -326,12 +353,77 @@ class _BehaviorModalState extends State<BehaviorModal> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text(
-                                  'Duration (seconds)',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w500,
+                                Row(
+                                  children: [
+                                    Icon(Icons.timer, color: Colors.blue[700], size: 20),
+                                    const SizedBox(width: 8),
+                                    const Text(
+                                      'Duration Measurement',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                
+                                // Duration Display
+                                Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: _isTiming ? Colors.green[50] : Colors.grey[50],
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: _isTiming ? Colors.green[200]! : Colors.grey[300]!,
+                                    ),
                                   ),
+                                  child: Center(
+                                    child: Text(
+                                      _formatDuration(_durationSeconds),
+                                      style: TextStyle(
+                                        fontSize: 32,
+                                        fontWeight: FontWeight.bold,
+                                        color: _isTiming ? Colors.green[700] : Colors.grey[700],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                
+                                const SizedBox(height: 12),
+                                
+                                // Timer Controls
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: ElevatedButton.icon(
+                                        onPressed: _isTiming ? _stopTimer : _startTimer,
+                                        icon: Icon(_isTiming ? Icons.pause : Icons.play_arrow),
+                                        label: Text(_isTiming ? 'Stop Timer' : 'Start Timer'),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: _isTiming ? Colors.red : Colors.green,
+                                          foregroundColor: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: OutlinedButton.icon(
+                                        onPressed: _isTiming ? null : _resetTimer,
+                                        icon: const Icon(Icons.refresh),
+                                        label: const Text('Reset'),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                
+                                const SizedBox(height: 12),
+                                
+                                // Manual Entry Option
+                                const Divider(),
+                                const Text(
+                                  'Or enter duration manually:',
+                                  style: TextStyle(fontWeight: FontWeight.w500),
                                 ),
                                 const SizedBox(height: 8),
                                 TextFormField(
@@ -340,19 +432,12 @@ class _BehaviorModalState extends State<BehaviorModal> {
                                   decoration: const InputDecoration(
                                     hintText: 'Enter duration in seconds',
                                     border: OutlineInputBorder(),
-                                    prefixIcon: Icon(Icons.timer),
+                                    prefixIcon: Icon(Icons.edit),
+                                    helperText: 'Enter duration manually if not using timer',
                                   ),
                                   onChanged: (value) {
                                     _durationSeconds = int.tryParse(value) ?? 0;
                                   },
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Current: ${_durationSeconds}s',
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.grey,
-                                  ),
                                 ),
                               ],
                             ),
@@ -495,7 +580,5 @@ class _BehaviorModalState extends State<BehaviorModal> {
             ),
           ),
         );
-      },
-    );
   }
 }
