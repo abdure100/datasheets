@@ -159,11 +159,11 @@ class _RateWidgetState extends State<RateWidget> {
           children: [
             Expanded(
               child: ElevatedButton.icon(
-                onPressed: _incrementCount,
-                icon: const Icon(Icons.add),
-                label: const Text('+1 Event'),
+                onPressed: _isRunning ? _stopTimer : _startTimer,
+                icon: Icon(_isRunning ? Icons.pause : Icons.play_arrow),
+                label: Text(_isRunning ? 'Stop Timer' : 'Start Timer'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
+                  backgroundColor: _isRunning ? Colors.red : Colors.green,
                   foregroundColor: Colors.white,
                 ),
               ),
@@ -171,11 +171,11 @@ class _RateWidgetState extends State<RateWidget> {
             const SizedBox(width: 8),
             Expanded(
               child: ElevatedButton.icon(
-                onPressed: _isRunning ? _stopTimer : _startTimer,
-                icon: Icon(_isRunning ? Icons.pause : Icons.play_arrow),
-                label: Text(_isRunning ? 'Stop Timer' : 'Start Timer'),
+                onPressed: _incrementCount,
+                icon: const Icon(Icons.add),
+                label: const Text('+1 Event'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _isRunning ? Colors.red : Colors.green,
+                  backgroundColor: Colors.blue,
                   foregroundColor: Colors.white,
                 ),
               ),

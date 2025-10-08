@@ -47,50 +47,64 @@ class _ProgramCardState extends State<ProgramCard> {
 
   Widget _buildDataCollectionWidget() {
     switch (widget.assignment.dataType) {
+      // FileMaker: percent_correct, percent_independent
       case 'percentCorrect':
       case 'percentIndependent':
+      case 'percent_correct':
+      case 'percent_independent':
         return TrialsWidget(
           config: _currentData,
           onDataChanged: (data) => setState(() => _currentData = data),
         );
       
+      // FileMaker: frequency
       case 'frequency':
         return FrequencyWidget(
           config: _currentData,
           onDataChanged: (data) => setState(() => _currentData = data),
         );
       
+      // FileMaker: duration
       case 'duration':
         return DurationWidget(
           config: _currentData,
           onDataChanged: (data) => setState(() => _currentData = data),
         );
       
+      // FileMaker: rate
       case 'rate':
         return RateWidget(
           config: _currentData,
           onDataChanged: (data) => setState(() => _currentData = data),
         );
       
+      // FileMaker: task_analysis
       case 'taskAnalysis':
+      case 'task_analysis':
         return TaskAnalysisWidget(
           config: _currentData,
           onDataChanged: (data) => setState(() => _currentData = data),
         );
       
+      // FileMaker: time_sampling
       case 'timeSampling':
+      case 'time_sampling':
         return TimeSamplingWidget(
           config: _currentData,
           onDataChanged: (data) => setState(() => _currentData = data),
         );
       
+      // FileMaker: rating_scale
       case 'ratingScale':
+      case 'rating_scale':
         return RatingScaleWidget(
           config: _currentData,
           onDataChanged: (data) => setState(() => _currentData = data),
         );
       
+      // FileMaker: abc_data
       case 'abcData':
+      case 'abc_data':
         return ABCWidget(
           config: _currentData,
           onDataChanged: (data) => setState(() => _currentData = data),
@@ -100,7 +114,16 @@ class _ProgramCardState extends State<ProgramCard> {
         return Card(
           child: Padding(
             padding: const EdgeInsets.all(16.0),
-            child: Text('Unknown data type: ${widget.assignment.dataType}'),
+            child: Column(
+              children: [
+                Text('Unknown data type: ${widget.assignment.dataType}'),
+                const SizedBox(height: 8),
+                const Text(
+                  'Available types: percent_correct, percent_independent, frequency, duration, rate, task_analysis, time_sampling, rating_scale, abc_data',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
           ),
         );
     }
@@ -108,8 +131,11 @@ class _ProgramCardState extends State<ProgramCard> {
 
   Map<String, dynamic> _getPayload() {
     switch (widget.assignment.dataType) {
+      // FileMaker: percent_correct, percent_independent
       case 'percentCorrect':
       case 'percentIndependent':
+      case 'percent_correct':
+      case 'percent_independent':
         final total = _currentData['total'] ?? 0;
         final hits = _currentData['hits'] ?? 0;
         return {
@@ -118,12 +144,15 @@ class _ProgramCardState extends State<ProgramCard> {
           'percent': total > 0 ? (hits / total * 100).round() : 0,
         };
       
+      // FileMaker: frequency
       case 'frequency':
         return {'count': _currentData['count'] ?? 0};
       
+      // FileMaker: duration
       case 'duration':
         return {'seconds': _currentData['seconds'] ?? 0};
       
+      // FileMaker: rate
       case 'rate':
         final count = _currentData['count'] ?? 0;
         final seconds = _currentData['seconds'] ?? 0;
@@ -133,7 +162,9 @@ class _ProgramCardState extends State<ProgramCard> {
           'ratePerMin': seconds > 0 ? (count / (seconds / 60)).round() : 0,
         };
       
+      // FileMaker: task_analysis
       case 'taskAnalysis':
+      case 'task_analysis':
         final steps = _currentData['steps'] as List? ?? [];
         final completed = steps.where((s) => s == true).length;
         return {
@@ -141,7 +172,9 @@ class _ProgramCardState extends State<ProgramCard> {
           'percentComplete': steps.isNotEmpty ? (completed / steps.length * 100).round() : 0,
         };
       
+      // FileMaker: time_sampling
       case 'timeSampling':
+      case 'time_sampling':
         final samples = _currentData['samples'] as List? ?? [];
         final onTask = samples.where((s) => s == true).length;
         return {
@@ -149,10 +182,14 @@ class _ProgramCardState extends State<ProgramCard> {
           'percentOnTask': samples.isNotEmpty ? (onTask / samples.length * 100).round() : 0,
         };
       
+      // FileMaker: rating_scale
       case 'ratingScale':
+      case 'rating_scale':
         return {'rating': _currentData['rating'] ?? 0};
       
+      // FileMaker: abc_data
       case 'abcData':
+      case 'abc_data':
         return {
           'antecedent': _currentData['antecedent'] ?? '',
           'behavior': _currentData['behavior'] ?? '',
@@ -222,6 +259,15 @@ class _ProgramCardState extends State<ProgramCard> {
         final sessionTotals = sessionProvider.getSessionTotalsForAssignment(widget.assignment.id ?? '');
         
         return Card(
+          elevation: 3,
+          color: Colors.blue[50],
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(
+              color: Colors.blue[300]!,
+              width: 2,
+            ),
+          ),
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(

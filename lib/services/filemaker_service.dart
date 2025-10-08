@@ -126,9 +126,7 @@ class FileMakerService extends ChangeNotifier {
   Map<String, String> get _headers => {
     'Content-Type': 'application/json',
     'Authorization': 'Bearer $_token',
-    'User-Agent': 'curl/8.7.1',
     'Accept': 'application/json',
-    'Connection': 'keep-alive',
     'Cache-Control': 'no-cache',
   };
 
@@ -420,9 +418,7 @@ class FileMakerService extends ChangeNotifier {
           headers: {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer $_token',
-            'User-Agent': 'curl/8.7.1',
             'Accept': 'application/json',
-            'Connection': 'keep-alive',
             'Cache-Control': 'no-cache',
           },
         ),
@@ -638,7 +634,7 @@ class FileMakerService extends ChangeNotifier {
             
             final assignment = ProgramAssignment.fromJson(fieldData);
             assignments.add(assignment);
-          } catch (e, stackTrace) {
+          } catch (e) {
             // Continue with other assignments
           }
         }
