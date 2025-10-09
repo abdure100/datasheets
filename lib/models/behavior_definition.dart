@@ -14,13 +14,13 @@ class BehaviorDefinition {
   @JsonKey(name: 'clientId')
   final String? clientId;
   
-  @JsonKey(name: 'name')
+  @JsonKey(name: 'behavior_name')
   final String name;
   
-  @JsonKey(name: 'code')
+  @JsonKey(name: 'behavior_code')
   final String code;
   
-  @JsonKey(name: 'defaultLogType')
+  @JsonKey(name: 'data_collection_method')
   final String defaultLogType;
   
   @JsonKey(name: 'severityScale_json', fromJson: _severityScaleFromJson, toJson: _severityScaleToJson)

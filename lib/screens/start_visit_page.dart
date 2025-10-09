@@ -91,6 +91,7 @@ class _StartVisitPageState extends State<StartVisitPage> {
                     fontSize: 16,
                     fontWeight: FontWeight.w500,
                   ),
+                  overflow: TextOverflow.ellipsis,
                 ),
                 if (client.dateOfBirth != null && client.dateOfBirth!.isNotEmpty)
                   Text(
@@ -304,6 +305,12 @@ class _StartVisitPageState extends State<StartVisitPage> {
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
+          // Behaviors Button
+          IconButton(
+            onPressed: () => Navigator.pushNamed(context, '/behaviors'),
+            icon: const Icon(Icons.psychology),
+            tooltip: 'View Behavior Definitions',
+          ),
           // Completed Sessions Button
           IconButton(
             onPressed: () => Navigator.pushNamed(context, '/completed-sessions'),

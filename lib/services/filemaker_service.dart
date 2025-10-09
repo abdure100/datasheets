@@ -15,7 +15,7 @@ import 'location_service.dart';
 import 'ip_service.dart';
 
 class FileMakerService extends ChangeNotifier {
-  static const String baseUrl = AppConfig.baseUrl;
+  static String get baseUrl => AppConfig.baseUrl;
   static const String database = AppConfig.database;
   static const String username = AppConfig.username;
   static const String password = AppConfig.password;
@@ -707,21 +707,28 @@ class FileMakerService extends ChangeNotifier {
   }
 
   // Behavior Definition operations
-  Future<List<BehaviorDefinition>> getBehaviorDefinitions({required String clientId}) async {
+  Future<List<BehaviorDefinition>> getBehaviorDefinitions({String? clientId}) async {
     await _ensureAuthenticated();
     
-    final query = {
-      'query': [
-        {'clientId': '==$clientId'},  // Search by provided client ID
-      ],
+    final query = <String, dynamic>{
       'limit': 100  // Limit to 100 records
     };
+    
+    // Always provide a query - use empty query to get all records if no clientId
+    if (clientId != null && clientId.isNotEmpty) {
+      query['query'] = [
+        {'clientId': '==$clientId'},  // Search by provided client ID
+      ];
+    } else {
+      // Empty query to get all behavior definitions
+      query['query'] = [];
+    }
 
 
     try {
-      final response = await _dio.post(
-        '/databases/$database/layouts/api_behavior_defs/_find',
-        data: query,
+      // Use direct record access instead of _find since we want all records
+      final response = await _dio.get(
+        '/databases/$database/layouts/dapi-patient_behaviors/records',
         options: Options(
           headers: {
             'Content-Type': 'application/json',
@@ -742,9 +749,6 @@ class FileMakerService extends ChangeNotifier {
       // FileMaker "OK"
       if (code == '0') {
         final records = (data['response']?['data'] as List?) ?? const [];
-      if (records.isNotEmpty) {
-      } else {
-      }
         
         // Parse behavior definitions
         final behaviorDefs = <BehaviorDefinition>[];
@@ -753,6 +757,8 @@ class FileMakerService extends ChangeNotifier {
             final behaviorDef = BehaviorDefinition.fromJson(records[i]['fieldData']);
             behaviorDefs.add(behaviorDef);
           } catch (e) {
+            // Continue with other records if one fails to parse
+            continue;
           }
         }
         

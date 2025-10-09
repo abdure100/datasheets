@@ -11,9 +11,9 @@ BehaviorDefinition _$BehaviorDefinitionFromJson(Map<String, dynamic> json) =>
       id: json['PrimaryKey'] as String,
       orgId: json['orgId'] as String?,
       clientId: json['clientId'] as String?,
-      name: json['name'] as String,
-      code: json['code'] as String,
-      defaultLogType: json['defaultLogType'] as String,
+      name: json['behavior_name'] as String,
+      code: json['behavior_code'] as String,
+      defaultLogType: json['data_collection_method'] as String,
       severityScaleJson:
           BehaviorDefinition._severityScaleFromJson(json['severityScale_json']),
     );
@@ -23,9 +23,9 @@ Map<String, dynamic> _$BehaviorDefinitionToJson(BehaviorDefinition instance) =>
       'PrimaryKey': instance.id,
       'orgId': instance.orgId,
       'clientId': instance.clientId,
-      'name': instance.name,
-      'code': instance.code,
-      'defaultLogType': instance.defaultLogType,
+      'behavior_name': instance.name,
+      'behavior_code': instance.code,
+      'data_collection_method': instance.defaultLogType,
       'severityScale_json':
           BehaviorDefinition._severityScaleToJson(instance.severityScaleJson),
     };

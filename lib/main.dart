@@ -6,6 +6,7 @@ import 'screens/session_page.dart';
 import 'screens/manual_session_page.dart';
 import 'screens/completed_sessions_page.dart';
 import 'screens/session_details_page.dart';
+import 'screens/behaviors_page.dart';
 import 'services/filemaker_service.dart';
 import 'providers/session_provider.dart';
 
@@ -66,6 +67,13 @@ class DataSheetsApp extends StatelessWidget {
           '/session-details': (context) {
             final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
             return SessionDetailsPage(session: args?['session']);
+          },
+          '/behaviors': (context) {
+            final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+            return BehaviorsPage(
+              clientId: args?['clientId'],
+              visitId: args?['visitId'],
+            );
           },
         },
       ),
