@@ -12,8 +12,8 @@ Staff _$StaffFromJson(Map<String, dynamic> json) => Staff(
       passwordRaw: json['Password_raw'] as String,
       name: json['FullName'] as String,
       role: json['role'] as String?,
-      active: json['active'] as bool?,
-      allowManualEntry: (json['Allow_manual_entry'] as num?)?.toInt(),
+      active: _boolFromJson(json['active']),
+      allowManualEntry: _intFromJson(json['Allow_manual_entry']),
     );
 
 Map<String, dynamic> _$StaffToJson(Staff instance) => <String, dynamic>{

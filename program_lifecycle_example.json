@@ -1,0 +1,268 @@
+{
+  "program_lifecycle_demo": {
+    "description": "Complete lifecycle of a discrete trial program from creation to mastery",
+    "program_assignment": {
+      "id": "PA-001",
+      "clientId": "CLIENT-123",
+      "ltgId": "LTG-456",
+      "name": "Following 2-Step Instructions",
+      "dataType": "discrete_trial",
+      "status": "active",
+      "phase": "baseline",
+      "masteryCriteria": {
+        "metric": "percent",
+        "direction": "at_least",
+        "threshold": 80,
+        "consecutiveSessions": 3,
+        "minTrialsPerSession": 10,
+        "minDistinctDays": 5
+      },
+      "config": {
+        "targetBehavior": "Follow 2-step instructions",
+        "promptLevel": "Independent",
+        "reinforcementSchedule": "FR1"
+      }
+    },
+    "session_data_examples": [
+      {
+        "session_1": {
+          "date": "2024-01-15",
+          "phase": "baseline",
+          "data": {
+            "total": 10,
+            "hits": 3,
+            "percent": 30
+          },
+          "notes": "Client struggled with multi-step instructions. Needed frequent prompting.",
+          "payload": {
+            "type": "discrete_trial",
+            "total": 10,
+            "hits": 3,
+            "percent": 30,
+            "sessionNotes": "Baseline data - client needs support for 2-step instructions"
+          }
+        }
+      },
+      {
+        "session_2": {
+          "date": "2024-01-16",
+          "phase": "baseline",
+          "data": {
+            "total": 12,
+            "hits": 5,
+            "percent": 42
+          },
+          "notes": "Continued baseline data collection. No intervention yet.",
+          "payload": {
+            "type": "discrete_trial",
+            "total": 12,
+            "hits": 5,
+            "percent": 42,
+            "baselineNotes": "Continued baseline - no teaching strategies used"
+          }
+        }
+      },
+      {
+        "session_3": {
+          "date": "2024-01-17",
+          "phase": "baseline",
+          "data": {
+            "total": 15,
+            "hits": 8,
+            "percent": 53
+          },
+          "notes": "Final baseline session. Ready to begin intervention.",
+          "payload": {
+            "type": "discrete_trial",
+            "total": 15,
+            "hits": 8,
+            "percent": 53,
+            "baselineNotes": "Final baseline session - no teaching strategies"
+          }
+        }
+      },
+      {
+        "session_4": {
+          "date": "2024-01-18",
+          "phase": "intervention",
+          "data": {
+            "total": 12,
+            "hits": 9,
+            "percent": 75
+          },
+          "notes": "Significant improvement. Client following instructions more independently.",
+          "payload": {
+            "type": "discrete_trial",
+            "total": 12,
+            "hits": 9,
+            "percent": 75,
+            "interventionNotes": "Client showing increased independence"
+          }
+        }
+      },
+      {
+        "session_5": {
+          "date": "2024-01-19",
+          "phase": "intervention",
+          "data": {
+            "total": 10,
+            "hits": 8,
+            "percent": 80
+          },
+          "notes": "Met 80% criteria for first time!",
+          "payload": {
+            "type": "discrete_trial",
+            "total": 10,
+            "hits": 8,
+            "percent": 80,
+            "interventionNotes": "First session meeting 80% criteria"
+          }
+        }
+      },
+      {
+        "session_6": {
+          "date": "2024-01-22",
+          "phase": "intervention",
+          "data": {
+            "total": 12,
+            "hits": 10,
+            "percent": 83
+          },
+          "notes": "Consistent performance above 80%. Second consecutive session.",
+          "payload": {
+            "type": "discrete_trial",
+            "total": 12,
+            "hits": 10,
+            "percent": 83,
+            "interventionNotes": "Second consecutive session above 80%"
+          }
+        }
+      },
+      {
+        "session_7": {
+          "date": "2024-01-23",
+          "phase": "intervention",
+          "data": {
+            "total": 10,
+            "hits": 9,
+            "percent": 90
+          },
+          "notes": "Excellent performance! Third consecutive session above 80%.",
+          "payload": {
+            "type": "discrete_trial",
+            "total": 10,
+            "hits": 9,
+            "percent": 90,
+            "interventionNotes": "Third consecutive session - mastery criteria met!"
+          }
+        }
+      }
+    ],
+    "mastery_evaluation": {
+      "triggered_after": "session_7",
+      "evaluation_criteria": {
+        "metric": "percent",
+        "direction": "at_least",
+        "threshold": 80,
+        "consecutiveSessions": 3,
+        "minTrialsPerSession": 10,
+        "minDistinctDays": 5
+      },
+      "evaluation_results": {
+        "consecutive_sessions_above_threshold": 3,
+        "average_performance": 84.3,
+        "total_trials": 71,
+        "total_hits": 60,
+        "overall_percent": 85,
+        "criteria_met": true,
+        "mastery_date": "2024-01-23T14:30:00Z"
+      }
+    },
+    "program_status_update": {
+      "before_mastery": {
+        "status": "active",
+        "phase": "intervention",
+        "masteredAt": null
+      },
+      "after_mastery": {
+        "status": "mastered",
+        "phase": "maintenance",
+        "masteredAt": "2024-01-23T14:30:00Z"
+      }
+    },
+    "maintenance_sessions": [
+      {
+        "session_8": {
+          "date": "2024-01-30",
+          "phase": "maintenance",
+          "data": {
+            "total": 8,
+            "hits": 7,
+            "percent": 88
+          },
+          "notes": "Maintenance session - skill maintained well.",
+          "payload": {
+            "type": "discrete_trial",
+            "total": 8,
+            "hits": 7,
+            "percent": 88,
+            "maintenanceNotes": "Skill maintained after 1 week"
+          }
+        }
+      },
+      {
+        "session_9": {
+          "date": "2024-02-06",
+          "phase": "maintenance",
+          "data": {
+            "total": 10,
+            "hits": 9,
+            "percent": 90
+          },
+          "notes": "Excellent maintenance performance. Ready for generalization.",
+          "payload": {
+            "type": "discrete_trial",
+            "total": 10,
+            "hits": 9,
+            "percent": 90,
+            "maintenanceNotes": "Ready to move to generalization phase"
+          }
+        }
+      }
+    ],
+    "generalization_sessions": [
+      {
+        "session_10": {
+          "date": "2024-02-13",
+          "phase": "generalization",
+          "data": {
+            "total": 12,
+            "hits": 11,
+            "percent": 92
+          },
+          "notes": "Generalization to new environment successful.",
+          "payload": {
+            "type": "discrete_trial",
+            "total": 12,
+            "hits": 11,
+            "percent": 92,
+            "generalizationNotes": "Tested in classroom setting - successful"
+          }
+        }
+      }
+    ],
+    "final_program_summary": {
+      "total_sessions": 10,
+      "baseline_sessions": 1,
+      "intervention_sessions": 6,
+      "maintenance_sessions": 2,
+      "generalization_sessions": 1,
+      "total_trials": 101,
+      "total_hits": 89,
+      "overall_percent": 88.1,
+      "days_to_mastery": 8,
+      "mastery_achieved": true,
+      "current_status": "generalization"
+    }
+  }
+}

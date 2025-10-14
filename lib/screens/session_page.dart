@@ -60,6 +60,9 @@ class _SessionPageState extends State<SessionPage> {
       final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
       final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
       
+      // Show dialog to save any unsaved data before ending the session
+      await _showSaveUnsavedDataDialog();
+      
       final result = await fileMakerService.closeVisit(widget.visit!.id, DateTime.now());
       
       sessionProvider.endVisit();
@@ -128,6 +131,49 @@ class _SessionPageState extends State<SessionPage> {
     if (result == true) {
       // User confirmed, end the session
       await _endVisit();
+    }
+  }
+
+  Future<void> _showSaveUnsavedDataDialog() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Save Unsaved Data'),
+          content: const Text(
+            'Do you have any unsaved program data that you would like to save before ending the session?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('No, End Session'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Yes, Save Data'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result == true) {
+      // User wants to save data, show a message to save manually
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Please save your program data using the "Log Behavior" button on each program card before ending the session.',
+            ),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 5),
+          ),
+        );
+      }
+      
+      // Don't end the session yet, let user save data manually
+      setState(() => _isEnding = false);
+      return;
     }
   }
 
@@ -200,36 +246,47 @@ class _SessionPageState extends State<SessionPage> {
                     padding: const EdgeInsets.all(16.0),
                     child: Column(
                       children: [
+                        // Session Time - First Row
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Expanded(
-                              child: Text(
-                                'Session Time: ${_formatDuration(_elapsed)}',
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                                overflow: TextOverflow.ellipsis,
+                            const Text(
+                              'Session Time:',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
                             const SizedBox(width: 8),
-                            ElevatedButton.icon(
-                              onPressed: _isEnding ? null : _endVisit,
-                              icon: _isEnding 
-                                  ? const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
-                                    )
-                                  : const Icon(Icons.stop),
-                              label: Text(_isEnding ? 'Ending...' : 'End Session'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.red,
-                                foregroundColor: Colors.white,
+                            Text(
+                              _formatDuration(_elapsed),
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue,
                               ),
                             ),
                           ],
+                        ),
+                        const SizedBox(height: 12),
+                        // End Session Button - Second Row
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: _isEnding ? null : _endVisit,
+                            icon: _isEnding 
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.stop),
+                            label: Text(_isEnding ? 'Ending...' : 'End Session'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                          ),
                         ),
                         const SizedBox(height: 8),
                         Text(
@@ -287,6 +344,7 @@ class _SessionPageState extends State<SessionPage> {
                             updatedAt: DateTime.now(),
                             payload: payload,
                             staffId: widget.visit!.staffId,
+                            interventionPhase: assignment.phase ?? 'baseline',
                           );
                           
                           final savedRecord = await fileMakerService.upsertSessionRecord(sessionRecord);

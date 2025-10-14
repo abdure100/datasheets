@@ -16,6 +16,7 @@ class _StartVisitPageState extends State<StartVisitPage> {
   final _formKey = GlobalKey<FormState>();
   Client? _selectedClient;
   List<Client> _clients = [];
+  List<Visit> _plannedVisits = [];
   bool _isLoading = false;
   bool _isHistoricalMode = false;
   final DateTime _selectedDate = DateTime.now();
@@ -31,6 +32,7 @@ class _StartVisitPageState extends State<StartVisitPage> {
   void initState() {
     super.initState();
     _loadClients();
+    _loadPlannedVisits();
   }
 
   Future<void> _loadClients() async {
@@ -54,6 +56,92 @@ class _StartVisitPageState extends State<StartVisitPage> {
         );
       }
     }
+  }
+
+  Future<void> _loadPlannedVisits() async {
+    try {
+      final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
+      final plannedVisits = await fileMakerService.getPlannedVisits();
+      
+      setState(() {
+        _plannedVisits = plannedVisits;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading planned visits: $e')),
+        );
+      }
+    }
+  }
+
+  Widget _buildPlannedVisitRow(Visit visit) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: Colors.grey[200]!),
+        ),
+      ),
+      child: Row(
+        children: [
+          // Time icon
+          CircleAvatar(
+            radius: 24,
+            backgroundColor: Colors.blue[100],
+            child: Icon(
+              Icons.schedule,
+              color: Colors.blue[700],
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 16),
+          // Visit Info
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  visit.clientName ?? 'Unknown Patient',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (visit.timeIn != null && visit.timeIn!.isNotEmpty)
+                  Text(
+                    'Time: ${visit.timeIn}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                if (visit.staffName != null && visit.staffName!.isNotEmpty)
+                  Text(
+                    'Staff: ${visit.staffName}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          // Start Button
+          ElevatedButton.icon(
+            onPressed: () => _startPlannedVisit(visit),
+            icon: const Icon(Icons.play_arrow, size: 18),
+            label: const Text('Start'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildClientRow(Client client) {
@@ -109,7 +197,7 @@ class _StartVisitPageState extends State<StartVisitPage> {
               ? ElevatedButton.icon(
                   onPressed: () => _enterManualSheet(client),
                   icon: const Icon(Icons.edit_note, size: 18),
-                  label: const Text('Enter Manual Sheet'),
+                  label: const Text('Enter'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.orange,
                     foregroundColor: Colors.white,
@@ -119,7 +207,7 @@ class _StartVisitPageState extends State<StartVisitPage> {
               : ElevatedButton.icon(
                   onPressed: () => _startSessionWithClient(client),
                   icon: const Icon(Icons.play_arrow, size: 18),
-                  label: const Text('Start Session'),
+                  label: const Text('Start'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Theme.of(context).primaryColor,
                     foregroundColor: Colors.white,
@@ -129,6 +217,11 @@ class _StartVisitPageState extends State<StartVisitPage> {
         ],
       ),
     );
+  }
+
+  Future<void> _startPlannedVisit(Visit visit) async {
+    setState(() => _selectedClient = null);
+    await _startVisitWithPlanned(visit);
   }
 
   Future<void> _startSessionWithClient(Client client) async {
@@ -191,6 +284,54 @@ class _StartVisitPageState extends State<StartVisitPage> {
       }
     } finally {
       setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _startVisitWithPlanned(Visit plannedVisit) async {
+    try {
+      final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
+      final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
+      
+      // Create a new visit with the planned visit's details
+      final visit = Visit(
+        id: plannedVisit.id,
+        clientId: plannedVisit.clientId,
+        staffId: _currentStaffId,
+        serviceCode: plannedVisit.serviceCode,
+        startTs: DateTime.now(),
+        status: 'In Progress',
+        notes: plannedVisit.notes,
+        clientName: plannedVisit.clientName,
+        staffName: plannedVisit.staffName,
+      );
+      
+      // Create the visit in FileMaker
+      final createdVisit = await fileMakerService.createVisit(visit);
+      
+      // Start the session (we'll need to get the client info)
+      // For now, we'll create a minimal client object
+      final client = Client(
+        id: plannedVisit.clientId,
+        name: plannedVisit.clientName ?? 'Unknown Client',
+        dateOfBirth: null,
+      );
+      sessionProvider.startVisit(createdVisit, client);
+      
+      // Navigate to session page
+      Navigator.pushReplacementNamed(
+        context,
+        '/session',
+        arguments: {
+          'visit': createdVisit,
+          'client': null, // We'll get client info from the visit
+        },
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error starting planned visit: $e')),
+        );
+      }
     }
   }
 
@@ -298,11 +439,11 @@ class _StartVisitPageState extends State<StartVisitPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Select Client'),
+        title: const Text('Overview'),
         centerTitle: true,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => _showLogoutDialog(),
         ),
         actions: [
           // Behaviors Button
@@ -362,7 +503,7 @@ class _StartVisitPageState extends State<StartVisitPage> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Padding(
+          : SingleChildScrollView(
               padding: const EdgeInsets.all(16.0),
               child: Form(
                 key: _formKey,
@@ -370,17 +511,35 @@ class _StartVisitPageState extends State<StartVisitPage> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     const SizedBox(height: 20),
-                    const Text(
-                      'Select a Client to Start Session',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 20),
                     
-                    // Historical Entry Mode Toggle (only show if staff has permission)
+                    // Scheduled Visits Section
+                    if (_plannedVisits.isNotEmpty) ...[
+                      const Text(
+                        '📅 Scheduled Visits',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        height: 200,
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.blue[300]!),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: ListView.builder(
+                          itemCount: _plannedVisits.length,
+                          itemBuilder: (context, index) {
+                            final visit = _plannedVisits[index];
+                            return _buildPlannedVisitRow(visit);
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+                    
+                    // Manual Entry Mode Toggle (moved before Start Session)
                     Consumer<FileMakerService>(
                       builder: (context, fileMakerService, child) {
                         final canManualEntry = fileMakerService.currentStaffCanManualEntry ?? false;
@@ -438,11 +597,19 @@ class _StartVisitPageState extends State<StartVisitPage> {
                     ),
                     const SizedBox(height: 20),
                     
-                    // Client Selection Table
+                    // Start a Session Now Section
+                    const Text(
+                      '🚀 Start a Session Now',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     Container(
-                      height: 300,
+                      height: 200,
                       decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey[300]!),
+                        border: Border.all(color: Colors.green[300]!),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: _clients.isEmpty
@@ -458,6 +625,46 @@ class _StartVisitPageState extends State<StartVisitPage> {
                             ),
                     ),
                     const SizedBox(height: 20),
+                    
+                    // Past Notes Section
+                    const Text(
+                      '📋 Past Notes',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      height: 80,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.orange[300]!),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: InkWell(
+                        onTap: () {
+                          Navigator.pushNamed(context, '/completed-sessions');
+                        },
+                        borderRadius: BorderRadius.circular(8),
+                        child: const Center(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.history, size: 24, color: Colors.orange),
+                              SizedBox(width: 12),
+                              Text(
+                                'View Completed Sessions',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
                   ],
                 ),
               ),
@@ -465,9 +672,53 @@ class _StartVisitPageState extends State<StartVisitPage> {
     );
   }
 
-  void _logout() {
-    // Clear any stored session data
-    // Navigate back to login page
-    Navigator.pushReplacementNamed(context, '/');
+  Future<void> _showLogoutDialog() async {
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Logout'),
+          content: const Text('Are you sure you want to logout? This will end your current session.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.red,
+              ),
+              child: const Text('Logout'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result == true) {
+      await _logout();
+    }
+  }
+
+  Future<void> _logout() async {
+    try {
+      // Clear any stored session data
+      final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
+      
+      // Logout from backend if needed
+      await fileMakerService.logout();
+      
+      // Navigate back to login page
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/');
+      }
+    } catch (e) {
+      // Even if logout fails, still navigate to login page
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/');
+      }
+    }
   }
 }

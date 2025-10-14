@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'dart:convert';
 import '../models/client.dart';
 import '../models/visit.dart';
 import '../models/program_assignment.dart';
 import '../models/behavior_definition.dart';
+import '../models/session_record.dart';
 import '../services/filemaker_service.dart';
 import '../widgets/program_card.dart';
 import '../widgets/behavior_board.dart';
@@ -615,17 +615,32 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
     try {
       final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
       
-      // Create session record with program data
-      final sessionRecord = {
-        'visitId': _createdVisit!.id,
-        'clientId': _client.id,
-        'assignmentId': assignmentId,
-        'startedAt_ts': DateTime.now().toIso8601String().split('.')[0],
-        'payload_json': jsonEncode(data),
-        'staffId': fileMakerService.currentStaffId,
-      };
+      // Find the assignment to get its phase
+      final assignment = _assignments.firstWhere(
+        (a) => a.id == assignmentId,
+        orElse: () => const ProgramAssignment(
+          id: '',
+          clientId: '',
+          name: '',
+          phase: 'baseline', // Default fallback
+        ),
+      );
       
-      await fileMakerService.createSessionRecord(sessionRecord);
+      // Create SessionRecord object for upsert
+      final sessionRecord = SessionRecord(
+        id: '', // Will be set by FileMaker
+        visitId: _createdVisit!.id,
+        clientId: _client.id,
+        assignmentId: assignmentId,
+        startedAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+        payload: data,
+        staffId: fileMakerService.currentStaffId,
+        interventionPhase: assignment.phase ?? 'baseline',
+      );
+      
+      // Use upsertSessionRecord to handle both create and update
+      await fileMakerService.upsertSessionRecord(sessionRecord);
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

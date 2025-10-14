@@ -35,6 +35,11 @@ class FileMakerService extends ChangeNotifier {
     _dio.options.baseUrl = baseUrl;
     _dio.options.connectTimeout = const Duration(seconds: AppConfig.connectionTimeout);
     _dio.options.receiveTimeout = const Duration(seconds: AppConfig.receiveTimeout);
+    
+    // Add network security configurations for macOS
+    _dio.options.headers['User-Agent'] = 'DataSheets/1.0.0';
+    _dio.options.headers['Connection'] = 'keep-alive';
+    
     _loadStoredToken();
   }
 
@@ -116,8 +121,11 @@ class FileMakerService extends ChangeNotifier {
         await Future.delayed(const Duration(milliseconds: 500));
         return true;
       } else {
+        print('Authentication failed with status: ${response.statusCode}');
+        print('Response body: ${response.body}');
       }
     } catch (e) {
+      print('Authentication error: $e');
     }
     return false;
   }
@@ -284,13 +292,18 @@ class FileMakerService extends ChangeNotifier {
         final fieldData = (records.first['fieldData'] as Map<String, dynamic>)..removeWhere((k, v) => v == null);
         
         // Store session global variables
-        _currentStaffId = fieldData['PrimaryKey'];
-        _currentCompanyId = fieldData['Company'];
-        _currentStaffName = fieldData['FullName'];
-        _currentStaffCanManualEntry = fieldData['Allow_manual_entry'] == 1;
+        _currentStaffId = fieldData['PrimaryKey']?.toString();
+        _currentCompanyId = fieldData['Company']?.toString();
+        _currentStaffName = fieldData['FullName']?.toString();
+        _currentStaffCanManualEntry = fieldData['Allow_manual_entry'] == 1 || fieldData['Allow_manual_entry'] == '1';
         
-        
-        return Staff.fromJson(fieldData);
+        try {
+          return Staff.fromJson(fieldData);
+        } catch (e) {
+          print('Error parsing staff data: $e');
+          print('Field data: $fieldData');
+          rethrow;
+        }
       }
 
       // FileMaker "no records match"
@@ -594,7 +607,7 @@ class FileMakerService extends ChangeNotifier {
 
     try {
       final response = await _dio.post(
-        '/databases/$database/layouts/api_program_assignments/_find',
+        '/databases/$database/layouts/dapi-patient_programs/_find',
         data: query,
         options: Options(
           headers: {
@@ -660,50 +673,167 @@ class FileMakerService extends ChangeNotifier {
   Future<SessionRecord> upsertSessionRecord(SessionRecord record) async {
     await _ensureAuthenticated();
     
-
     try {
-      // Create new record directly - without PrimaryKey (auto-generated)
-      final sessionData = {
-        'fieldData': {
-          'visitId': record.visitId,  // Use visit ID as-is
-          'clientId': record.clientId,
-          'assignmentId': record.assignmentId,
-          'startedAt_ts': record.startedAt?.toIso8601String().split('.')[0] ?? DateTime.now().toIso8601String().split('.')[0],
-          'payload_json': jsonEncode(record.payload),
-          'staffId': record.staffId ?? '',
-        }
-      };
+      print('💾 Upserting session record for visitId: ${record.visitId}, assignmentId: ${record.assignmentId}');
       
-      // Validate each field before sending
+      // First, try to find existing record with same visitId and assignmentId
+      final existingRecord = await _findExistingSessionRecord(record.visitId, record.assignmentId);
       
-      
-      final createResponse = await _dio.post(
-        '/databases/$database/layouts/api_sessiondata/records',
-        data: sessionData,
-        options: Options(
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $_token',
-            'Accept': 'application/json',
-            'Cache-Control': 'no-cache',
-          },
-        ),
-      );
-
-
-      if (createResponse.statusCode == 200 || createResponse.statusCode == 201) {
-        final data = createResponse.data as Map<String, dynamic>;
-        final recordId = data['response']['recordId'];
-        return record.copyWith(id: recordId.toString());
+      if (existingRecord != null) {
+        print('🔄 Updating existing record: ${existingRecord.id}');
+        // Update existing record
+        return await _updateSessionRecord(existingRecord.id, record);
+      } else {
+        print('➕ Creating new record');
+        // Create new record
+        return await _createSessionRecord(record);
       }
       
-      throw Exception('Failed to create session record: ${createResponse.statusCode}');
-      
     } catch (e) {
+      print('❌ Error in upsertSessionRecord: $e');
       if (e is DioException) {
       }
       rethrow;
     }
+  }
+
+  // Find existing session record by visitId and assignmentId
+  Future<SessionRecord?> _findExistingSessionRecord(String visitId, String assignmentId) async {
+    try {
+      print('🔍 Searching for existing record with visitId: $visitId, assignmentId: $assignmentId');
+      
+      final response = await _dio.post(
+        '/databases/$database/layouts/api_sessiondata/_find',
+        data: {
+          'query': [
+            {
+              'visitId': visitId,
+              'assignmentId': assignmentId,
+            }
+          ]
+        },
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer $_token',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+        ),
+      );
+
+      print('🔍 Search response status: ${response.statusCode}');
+      print('🔍 Search response data: ${response.data}');
+
+      if (response.statusCode == 200) {
+        final data = response.data as Map<String, dynamic>;
+        final records = data['response']['data'] as List<dynamic>?;
+        
+        print('🔍 Found ${records?.length ?? 0} records');
+        
+        if (records != null && records.isNotEmpty) {
+          final recordData = records.first as Map<String, dynamic>;
+          final fieldData = recordData['fieldData'] as Map<String, dynamic>;
+          
+          print('🔍 Found existing record: ${recordData['recordId']}');
+          
+          return SessionRecord(
+            id: recordData['recordId'].toString(),
+            visitId: fieldData['visitId'] ?? '',
+            clientId: fieldData['clientId'] ?? '',
+            assignmentId: fieldData['assignmentId'] ?? '',
+            startedAt: fieldData['startedAt_ts'] != null 
+                ? DateTime.parse(fieldData['startedAt_ts']) 
+                : null,
+            updatedAt: DateTime.now(),
+            payload: fieldData['payload_json'] != null 
+                ? jsonDecode(fieldData['payload_json']) 
+                : {},
+            staffId: fieldData['staffId'],
+            notes: fieldData['notes'],
+            interventionPhase: fieldData['intervention_phase'],
+          );
+        }
+      }
+      
+      print('🔍 No existing record found');
+      return null;
+    } catch (e) {
+      print('🔍 Error searching for existing record: $e');
+      // If no records found or error, return null
+      return null;
+    }
+  }
+
+  // Create new session record
+  Future<SessionRecord> _createSessionRecord(SessionRecord record) async {
+    final sessionData = {
+      'fieldData': {
+        'visitId': record.visitId,
+        'clientId': record.clientId,
+        'assignmentId': record.assignmentId,
+        'startedAt_ts': record.startedAt?.toIso8601String().split('.')[0] ?? DateTime.now().toIso8601String().split('.')[0],
+        'payload_json': jsonEncode(record.payload),
+        'staffId': record.staffId ?? '',
+        'notes': record.notes ?? '',
+        'intervention_phase': record.interventionPhase ?? 'baseline',
+      }
+    };
+    
+    final createResponse = await _dio.post(
+      '/databases/$database/layouts/api_sessiondata/records',
+      data: sessionData,
+      options: Options(
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $_token',
+          'Accept': 'application/json',
+          'Cache-Control': 'no-cache',
+        },
+      ),
+    );
+
+    if (createResponse.statusCode == 200 || createResponse.statusCode == 201) {
+      final data = createResponse.data as Map<String, dynamic>;
+      final recordId = data['response']['recordId'];
+      return record.copyWith(id: recordId.toString());
+    }
+    
+    throw Exception('Failed to create session record: ${createResponse.statusCode}');
+  }
+
+  // Update existing session record
+  Future<SessionRecord> _updateSessionRecord(String recordId, SessionRecord record) async {
+    final sessionData = {
+      'fieldData': {
+        'visitId': record.visitId,
+        'clientId': record.clientId,
+        'assignmentId': record.assignmentId,
+        'startedAt_ts': record.startedAt?.toIso8601String().split('.')[0] ?? DateTime.now().toIso8601String().split('.')[0],
+        'payload_json': jsonEncode(record.payload),
+        'staffId': record.staffId ?? '',
+        'notes': record.notes ?? '',
+        'intervention_phase': record.interventionPhase ?? 'baseline',
+      }
+    };
+    
+    final updateResponse = await _dio.patch(
+      '/databases/$database/layouts/api_sessiondata/records/$recordId',
+      data: sessionData,
+      options: Options(
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $_token',
+          'Accept': 'application/json',
+          'Cache-Control': 'no-cache',
+        },
+      ),
+    );
+
+    if (updateResponse.statusCode == 200) {
+      return record.copyWith(id: recordId);
+    }
+    
+    throw Exception('Failed to update session record: ${updateResponse.statusCode}');
   }
 
   // Behavior Definition operations
@@ -927,7 +1057,7 @@ class FileMakerService extends ChangeNotifier {
     await _ensureAuthenticated();
     
     final response = await http.patch(
-      Uri.parse('$baseUrl/databases/$database/layouts/api_program_assignments/records/$assignmentId'),
+      Uri.parse('$baseUrl/databases/$database/layouts/dapi-patient_programs/records/$assignmentId'),
       headers: _headers,
       body: json.encode({
         'script': 'EvaluateAssignmentMastery',
@@ -969,6 +1099,70 @@ class FileMakerService extends ChangeNotifier {
     }
     
     notifyListeners();
+  }
+
+  // Get planned visits for today
+  Future<List<Visit>> getPlannedVisits() async {
+    await _ensureAuthenticated();
+    
+    final today = DateTime.now();
+    final todayStr = '${today.month.toString().padLeft(2, '0')}/${today.day.toString().padLeft(2, '0')}/${today.year}';
+    
+    try {
+      final response = await _dio.post(
+        '/databases/$database/layouts/api_appointments/_find',
+        data: {
+          'query': [
+            {'Appointment_date': '==$todayStr'},
+            {'statusInput': '==Planned'}
+          ],
+          'limit': 50,
+          'sort': [
+            {'fieldName': 'time_in', 'sortOrder': 'ascend'}
+          ]
+        },
+      );
+      
+      if (response.statusCode == 200) {
+        final data = response.data['response']['data'] as List<dynamic>? ?? [];
+        final visits = <Visit>[];
+        
+        for (int i = 0; i < data.length; i++) {
+          try {
+            final item = data[i];
+            final fieldData = item['fieldData'] as Map<String, dynamic>;
+            
+            final processedData = <String, dynamic>{
+              'id': fieldData['PrimaryKey']?.toString() ?? '',
+              'clientId': fieldData['clientId']?.toString() ?? '',
+              'staffId': fieldData['staffId']?.toString() ?? '',
+              'Procedure_Input': fieldData['Procedure_Input']?.toString() ?? 'Intervention (97153)',
+              'start_ts': fieldData['start_ts']?.toString() ?? DateTime.now().toIso8601String(),
+              'end_ts': fieldData['end_ts']?.toString(),
+              'statusInput': fieldData['statusInput']?.toString() ?? 'Planned',
+              'billableMinutes_n': fieldData['billableMinutes_n'],
+              'units_total': fieldData['units_total'],
+              'notes': fieldData['visit_notes']?.toString(),
+              'Appointment_date': fieldData['Appointment_date']?.toString(),
+              'time_in': fieldData['time_in']?.toString(),
+              'Patient_name': fieldData['Patient_name']?.toString(),
+              'assignedto_name': fieldData['assignedto_name']?.toString(),
+            };
+            
+            final visit = Visit.fromJson(processedData);
+            visits.add(visit);
+          } catch (e) {
+            continue;
+          }
+        }
+        
+        return visits;
+      } else {
+        throw Exception('Failed to load planned visits: ${response.statusCode}');
+      }
+    } catch (e) {
+      rethrow;
+    }
   }
 
   // Get completed sessions

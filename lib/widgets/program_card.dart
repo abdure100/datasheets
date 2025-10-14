@@ -47,11 +47,7 @@ class _ProgramCardState extends State<ProgramCard> {
 
   Widget _buildDataCollectionWidget() {
     switch (widget.assignment.dataType) {
-      // FileMaker: percent_correct, percent_independent
-      case 'percentCorrect':
-      case 'percentIndependent':
-      case 'percent_correct':
-      case 'percent_independent':
+      case 'discrete_trial':
         return TrialsWidget(
           config: _currentData,
           onDataChanged: (data) => setState(() => _currentData = data),
@@ -131,17 +127,40 @@ class _ProgramCardState extends State<ProgramCard> {
 
   Map<String, dynamic> _getPayload() {
     switch (widget.assignment.dataType) {
-      // FileMaker: percent_correct, percent_independent
-      case 'percentCorrect':
-      case 'percentIndependent':
-      case 'percent_correct':
-      case 'percent_independent':
+      case 'discrete_trial':
         final total = _currentData['total'] ?? 0;
         final hits = _currentData['hits'] ?? 0;
+        final misses = _currentData['misses'] ?? 0;
+        final noResponse = _currentData['noResponse'] ?? 0;
+        final promptCounts = _currentData['promptCounts'] ?? {};
+        final mostIntrusivePrompt = _currentData['mostIntrusivePrompt'];
+        final totalPrompted = _currentData['totalPrompted'] ?? 0;
+        final percentCorrect = _currentData['percentCorrect'] ?? 0;
+        final percentIncorrect = _currentData['percentIncorrect'] ?? 0;
+        final percentNoResponse = _currentData['percentNoResponse'] ?? 0;
+        final percentPrompted = _currentData['percentPrompted'] ?? 0;
+        
+        print('🔍 ProgramCard _getPayload discrete_trial:');
+        print('  _currentData: $_currentData');
+        print('  totalPrompted: $totalPrompted');
+        print('  percentCorrect: $percentCorrect');
+        print('  percentIncorrect: $percentIncorrect');
+        print('  percentNoResponse: $percentNoResponse');
+        print('  percentPrompted: $percentPrompted');
+        
         return {
           'total': total,
           'hits': hits,
+          'misses': misses,
           'percent': total > 0 ? (hits / total * 100).round() : 0,
+          'noResponse': noResponse,
+          'promptCounts': promptCounts,
+          'mostIntrusivePrompt': mostIntrusivePrompt,
+          'totalPrompted': totalPrompted,
+          'percentCorrect': percentCorrect,
+          'percentIncorrect': percentIncorrect,
+          'percentNoResponse': percentNoResponse,
+          'percentPrompted': percentPrompted,
         };
       
       // FileMaker: frequency
@@ -281,17 +300,21 @@ class _ProgramCardState extends State<ProgramCard> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
-                            children: [
-                              Text(
-                                widget.assignment.name ?? 'Unnamed Program',
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              if (_hasUnsavedData()) ...[
-                                const SizedBox(width: 8),
+                          // Program Name - First Row
+                          Text(
+                            widget.assignment.name ?? 'Unnamed Program',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          // Unsaved Indicator - Second Row (if needed)
+                          if (_hasUnsavedData()) ...[
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                   decoration: BoxDecoration(
@@ -320,8 +343,8 @@ class _ProgramCardState extends State<ProgramCard> {
                                   ),
                                 ),
                               ],
-                            ],
-                          ),
+                            ),
+                          ],
                           Text(
                             widget.assignment.dataType ?? 'Unknown',
                             style: TextStyle(
@@ -435,8 +458,7 @@ class _ProgramCardState extends State<ProgramCard> {
 
   String _formatSessionTotal(Map<String, dynamic> totals) {
     switch (widget.assignment.dataType) {
-      case 'percentCorrect':
-      case 'percentIndependent':
+      case 'discrete_trial':
         return '${totals['totalHits']}/${totals['totalTrials']} (${totals['overallPercent']}%)';
       
       case 'frequency':

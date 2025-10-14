@@ -14,9 +14,9 @@ class Staff {
   final String name;
   @JsonKey(name: 'role')
   final String? role;
-  @JsonKey(name: 'active')
+  @JsonKey(name: 'active', fromJson: _boolFromJson)
   final bool? active;
-  @JsonKey(name: 'Allow_manual_entry')
+  @JsonKey(name: 'Allow_manual_entry', fromJson: _intFromJson)
   final int? allowManualEntry;
 
   const Staff({
@@ -36,4 +36,24 @@ class Staff {
 
   @override
   String toString() => name;
+}
+
+// Helper functions for JSON parsing
+bool? _boolFromJson(dynamic value) {
+  if (value == null) return null;
+  if (value is bool) return value;
+  if (value is String) {
+    return value.toLowerCase() == 'true' || value == '1';
+  }
+  if (value is int) return value == 1;
+  return null;
+}
+
+int? _intFromJson(dynamic value) {
+  if (value == null) return null;
+  if (value is int) return value;
+  if (value is String) {
+    return int.tryParse(value);
+  }
+  return null;
 }
