@@ -626,6 +626,16 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
         ),
       );
       
+      // Parse program times from data if available
+      DateTime? programStartTime;
+      DateTime? programEndTime;
+      if (data['programStartTime'] != null) {
+        programStartTime = DateTime.parse(data['programStartTime']);
+      }
+      if (data['programEndTime'] != null) {
+        programEndTime = DateTime.parse(data['programEndTime']);
+      }
+
       // Create SessionRecord object for upsert
       final sessionRecord = SessionRecord(
         id: '', // Will be set by FileMaker
@@ -637,6 +647,8 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
         payload: data,
         staffId: fileMakerService.currentStaffId,
         interventionPhase: assignment.phase ?? 'baseline',
+        programStartTime: programStartTime,
+        programEndTime: programEndTime,
       );
       
       // Use upsertSessionRecord to handle both create and update

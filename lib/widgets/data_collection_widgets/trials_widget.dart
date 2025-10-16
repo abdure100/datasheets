@@ -22,6 +22,8 @@ class _TrialsWidgetState extends State<TrialsWidget> {
   Map<String, int> _promptCounts = {};
   String? _mostIntrusivePrompt; // Track the highest level prompt that led to success
   String? _selectedPrompt; // Currently selected prompt for the next hit
+  DateTime? _programStartTime; // Time of first trial
+  DateTime? _programEndTime; // Time of last trial
 
   @override
   void initState() {
@@ -32,6 +34,14 @@ class _TrialsWidgetState extends State<TrialsWidget> {
     _noResponse = widget.config['noResponse'] ?? 0;
     _promptCounts = Map<String, int>.from(widget.config['promptCounts'] ?? {});
     _mostIntrusivePrompt = widget.config['mostIntrusivePrompt'];
+    
+    // Load program times from config if they exist
+    if (widget.config['programStartTime'] != null) {
+      _programStartTime = DateTime.parse(widget.config['programStartTime']);
+    }
+    if (widget.config['programEndTime'] != null) {
+      _programEndTime = DateTime.parse(widget.config['programEndTime']);
+    }
   }
 
   void _updateData() {
@@ -56,6 +66,8 @@ class _TrialsWidgetState extends State<TrialsWidget> {
       'percentIncorrect': percentIncorrect,
       'percentNoResponse': percentNoResponse,
       'percentPrompted': percentPrompted,
+      'programStartTime': _programStartTime?.toIso8601String(),
+      'programEndTime': _programEndTime?.toIso8601String(),
     };
     
     print('🔍 TrialsWidget _updateData: $updatedData');
@@ -101,6 +113,17 @@ class _TrialsWidgetState extends State<TrialsWidget> {
     }
     
     _mostIntrusivePrompt = currentMostIntrusive;
+  }
+
+  // Record trial time - first trial sets start time, every trial updates end time
+  void _recordTrialTime() {
+    final now = DateTime.now();
+    
+    // Set program start time on first trial
+    _programStartTime ??= now;
+    
+    // Always update program end time to the latest trial
+    _programEndTime = now;
   }
 
   @override
@@ -257,6 +280,7 @@ class _TrialsWidgetState extends State<TrialsWidget> {
                     _promptCounts[_selectedPrompt!] = (_promptCounts[_selectedPrompt!] ?? 0) + 1;
                     _updateMostIntrusivePrompt(); // Update MIP when hit occurs
                     _selectedPrompt = null; // Reset selection
+                    _recordTrialTime(); // Record trial time
                   });
                   _updateData();
                 } : null,
@@ -275,6 +299,7 @@ class _TrialsWidgetState extends State<TrialsWidget> {
                   setState(() {
                     _total++;
                     _misses++;
+                    _recordTrialTime(); // Record trial time
                   });
                   _updateData();
                 },
@@ -294,6 +319,7 @@ class _TrialsWidgetState extends State<TrialsWidget> {
                     _total++;
                     _noResponse++;
                     // NR counts as a trial but not as a hit
+                    _recordTrialTime(); // Record trial time
                   });
                   _updateData();
                 },
@@ -323,6 +349,8 @@ class _TrialsWidgetState extends State<TrialsWidget> {
                 _promptCounts.clear();
                 _mostIntrusivePrompt = null; // Reset MIP
                 _selectedPrompt = null; // Reset selection
+                _programStartTime = null; // Reset program start time
+                _programEndTime = null; // Reset program end time
               });
               _updateData();
             },

@@ -38,8 +38,14 @@ class _StartVisitPageState extends State<StartVisitPage> {
   Future<void> _loadClients() async {
     setState(() => _isLoading = true);
     try {
+      print('🔄 Loading clients...');
       final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
       final clients = await fileMakerService.getClients();
+      
+      print('✅ Loaded ${clients.length} clients');
+      for (int i = 0; i < clients.length; i++) {
+        print('👤 Client $i: ${clients[i].name} (ID: ${clients[i].id})');
+      }
       
       // Sort clients by namefull alphabetically
       clients.sort((a, b) => a.name.compareTo(b.name));
@@ -48,7 +54,10 @@ class _StartVisitPageState extends State<StartVisitPage> {
         _clients = clients;
         _isLoading = false;
       });
+      
+      print('📋 Client list updated in UI');
     } catch (e) {
+      print('❌ Error loading clients: $e');
       setState(() => _isLoading = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -63,16 +72,28 @@ class _StartVisitPageState extends State<StartVisitPage> {
       final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
       final plannedVisits = await fileMakerService.getPlannedVisits();
       
+      print('🎯 UI: Loaded ${plannedVisits.length} planned visits');
+      for (int i = 0; i < plannedVisits.length; i++) {
+        print('🎯 UI Visit $i: ${plannedVisits[i].clientName} - ${plannedVisits[i].appointmentDate}');
+      }
+      
       setState(() {
         _plannedVisits = plannedVisits;
       });
+      
+      print('🎯 UI: _plannedVisits.length = ${_plannedVisits.length}');
     } catch (e) {
+      print('❌ UI Error loading planned visits: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error loading planned visits: $e')),
         );
       }
     }
+  }
+
+  String _formatDateTime(DateTime dateTime) {
+    return '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
   }
 
   Widget _buildPlannedVisitRow(Visit visit) {
@@ -109,9 +130,25 @@ class _StartVisitPageState extends State<StartVisitPage> {
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
-                if (visit.timeIn != null && visit.timeIn!.isNotEmpty)
+                if (visit.appointmentDate != null && visit.appointmentDate!.isNotEmpty)
                   Text(
-                    'Time: ${visit.timeIn}',
+                    'Date: ${visit.appointmentDate}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                if (visit.startTs != null)
+                  Text(
+                    'Start: ${_formatDateTime(visit.startTs)}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                if (visit.endTs != null)
+                  Text(
+                    'End: ${_formatDateTime(visit.endTs!)}',
                     style: TextStyle(
                       fontSize: 12,
                       color: Colors.grey[600],
@@ -292,38 +329,61 @@ class _StartVisitPageState extends State<StartVisitPage> {
       final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
       final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
       
-      // Create a new visit with the planned visit's details
-      final visit = Visit(
-        id: plannedVisit.id,
-        clientId: plannedVisit.clientId,
-        staffId: _currentStaffId,
-        serviceCode: plannedVisit.serviceCode,
-        startTs: DateTime.now(),
-        status: 'In Progress',
-        notes: plannedVisit.notes,
-        clientName: plannedVisit.clientName,
-        staffName: plannedVisit.staffName,
+      // Update the existing scheduled visit to "In Progress" status
+      final updatedVisit = Visit(
+        id: plannedVisit.id,                    // Keep the existing visit ID
+        clientId: plannedVisit.clientId,        // Keep existing client ID
+        staffId: plannedVisit.staffId,          // Keep existing staff ID
+        serviceCode: plannedVisit.serviceCode,  // Keep existing service code
+        startTs: DateTime.now(),                // Set current time as actual start time
+        endTs: plannedVisit.endTs,              // Keep existing end time
+        status: 'in_progress',                  // Change status to "in_progress"
+        notes: plannedVisit.notes,              // Keep existing notes
+        clientName: plannedVisit.clientName,    // Keep existing client name
+        staffName: plannedVisit.staffName,      // Keep existing staff name
+        appointmentDate: plannedVisit.appointmentDate, // Keep existing appointment date
+        timeIn: plannedVisit.timeIn,            // Keep existing time_in
       );
       
-      // Create the visit in FileMaker
-      final createdVisit = await fileMakerService.createVisit(visit);
+      // Update the existing visit in FileMaker (don't create new one)
+      final visit = await fileMakerService.updateVisit(updatedVisit);
       
-      // Start the session (we'll need to get the client info)
-      // For now, we'll create a minimal client object
+      // Create client object for session
       final client = Client(
         id: plannedVisit.clientId,
         name: plannedVisit.clientName ?? 'Unknown Client',
         dateOfBirth: null,
       );
-      sessionProvider.startVisit(createdVisit, client);
       
+      // Start the session with the updated visit
+      sessionProvider.startVisit(visit, client);
+      
+      // Load program assignments and behavior definitions for data logging
+      try {
+        final assignments = await fileMakerService.getProgramAssignments(client.id);
+        sessionProvider.setActiveAssignments(assignments);
+        print('✅ Loaded ${assignments.length} program assignments');
+      } catch (e) {
+        print('⚠️ Error loading program assignments: $e');
+        // Continue without assignments
+      }
+      
+      try {
+        final behaviorDefs = await fileMakerService.getBehaviorDefinitions(clientId: client.id);
+        sessionProvider.setBehaviorDefinitions(behaviorDefs);
+        print('✅ Loaded ${behaviorDefs.length} behavior definitions');
+      } catch (e) {
+        print('⚠️ Error loading behavior definitions: $e');
+        // Continue without behavior definitions
+      }
+
       // Navigate to session page
       Navigator.pushReplacementNamed(
         context,
         '/session',
         arguments: {
-          'visit': createdVisit,
-          'client': null, // We'll get client info from the visit
+          'visit': visit,
+          'client': client,
         },
       );
     } catch (e) {
@@ -561,14 +621,15 @@ class _StartVisitPageState extends State<StartVisitPage> {
                                       color: _isHistoricalMode ? Theme.of(context).primaryColor : Colors.grey,
                                     ),
                                     const SizedBox(width: 8),
-                                    const Text(
-                                      'Manual Entry Mode',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w500,
+                                    Expanded(
+                                      child: Text(
+                                        'Manual Entry Mode',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w500,
+                                        ),
                                       ),
                                     ),
-                                    const Spacer(),
                                     Switch(
                                       value: _isHistoricalMode,
                                       onChanged: (value) {
@@ -613,13 +674,35 @@ class _StartVisitPageState extends State<StartVisitPage> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: _clients.isEmpty
-                          ? const Center(
-                              child: Text('No clients available'),
+                          ? Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.people_outline, size: 48, color: Colors.grey),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'No patients available (${_clients.length})',
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  const Text(
+                                    'Check console for loading details',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             )
                           : ListView.builder(
                               itemCount: _clients.length,
                               itemBuilder: (context, index) {
                                 final client = _clients[index];
+                                print('🎨 Building UI for client: ${client.name}');
                                 return _buildClientRow(client);
                               },
                             ),

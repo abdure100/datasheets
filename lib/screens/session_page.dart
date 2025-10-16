@@ -27,6 +27,7 @@ class _SessionPageState extends State<SessionPage> {
   Timer? _timer;
   Duration _elapsed = Duration.zero;
   bool _isEnding = false;
+  final Set<String> _savedAssignments = {}; // Track which assignments have been saved
 
   @override
   void initState() {
@@ -60,10 +61,22 @@ class _SessionPageState extends State<SessionPage> {
       final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
       final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
       
-      // Show dialog to save any unsaved data before ending the session
-      await _showSaveUnsavedDataDialog();
+      // Check if all assignments are saved
+      final activeAssignments = await fileMakerService.getProgramAssignments(widget.client!.id);
+      final totalAssignments = activeAssignments.length;
+      final savedAssignments = _savedAssignments.length;
       
+      if (savedAssignments < totalAssignments) {
+        // Not all assignments are saved, show dialog
+        await _showSaveUnsavedDataDialog();
+      } else {
+        // All assignments are saved, proceed to end session
+        print('✅ All assignments saved, ending session directly');
+      }
+      
+      print('🛑 Ending session for visit: ${widget.visit!.id}');
       final result = await fileMakerService.closeVisit(widget.visit!.id, DateTime.now());
+      print('🛑 Session ended, result: $result');
       
       sessionProvider.endVisit();
       
@@ -135,13 +148,19 @@ class _SessionPageState extends State<SessionPage> {
   }
 
   Future<void> _showSaveUnsavedDataDialog() async {
+    // Get all active assignments
+    final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
+    final activeAssignments = await fileMakerService.getProgramAssignments(widget.client!.id);
+    final totalAssignments = activeAssignments.length;
+    final savedAssignments = _savedAssignments.length;
+    
     final result = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
           title: const Text('Save Unsaved Data'),
-          content: const Text(
-            'Do you have any unsaved program data that you would like to save before ending the session?',
+          content: Text(
+            'You have $savedAssignments of $totalAssignments programs saved.\n\nDo you have any unsaved program data that you would like to save before ending the session?\n\nIf you choose "Yes, Save Data", please use the "Save Data" button on each program card to save your data.',
           ),
           actions: [
             TextButton(
@@ -158,12 +177,12 @@ class _SessionPageState extends State<SessionPage> {
     );
 
     if (result == true) {
-      // User wants to save data, show a message to save manually
+      // User wants to save data, show instructions and don't end session yet
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'Please save your program data using the "Log Behavior" button on each program card before ending the session.',
+              'Please save your program data using the "Save Data" button on each program card, then try ending the session again.',
             ),
             backgroundColor: Colors.orange,
             duration: Duration(seconds: 5),
@@ -176,6 +195,7 @@ class _SessionPageState extends State<SessionPage> {
       return;
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -335,6 +355,16 @@ class _SessionPageState extends State<SessionPage> {
                         try {
                           final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
                           
+                          // Parse program times from payload if available
+                          DateTime? programStartTime;
+                          DateTime? programEndTime;
+                          if (payload['programStartTime'] != null) {
+                            programStartTime = DateTime.parse(payload['programStartTime']);
+                          }
+                          if (payload['programEndTime'] != null) {
+                            programEndTime = DateTime.parse(payload['programEndTime']);
+                          }
+
                           final sessionRecord = SessionRecord(
                             id: '', // Will be set by FileMaker
                             visitId: widget.visit!.id,
@@ -345,10 +375,17 @@ class _SessionPageState extends State<SessionPage> {
                             payload: payload,
                             staffId: widget.visit!.staffId,
                             interventionPhase: assignment.phase ?? 'baseline',
+                            programStartTime: programStartTime,
+                            programEndTime: programEndTime,
                           );
                           
                           final savedRecord = await fileMakerService.upsertSessionRecord(sessionRecord);
                           sessionProvider.addSessionRecord(savedRecord);
+                          
+                          // Mark this assignment as saved
+                          setState(() {
+                            _savedAssignments.add(assignment.id ?? '');
+                          });
                           
                           // Check for mastery if this is a reduction program
                           if (assignment.dataType?.contains('reduction') == true || 

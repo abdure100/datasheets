@@ -33,6 +33,12 @@ class SessionRecord {
   
   @JsonKey(name: 'intervention_phase')
   final String? interventionPhase;
+  
+  @JsonKey(name: 'program_start_time', fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
+  final DateTime? programStartTime;
+  
+  @JsonKey(name: 'program_end_time', fromJson: _dateTimeFromJson, toJson: _dateTimeToJson)
+  final DateTime? programEndTime;
 
   const SessionRecord({
     required this.id,
@@ -45,6 +51,8 @@ class SessionRecord {
     this.notes,
     this.staffId,
     this.interventionPhase,
+    this.programStartTime,
+    this.programEndTime,
   });
 
   factory SessionRecord.fromJson(Map<String, dynamic> json) => _$SessionRecordFromJson(json);
@@ -61,6 +69,8 @@ class SessionRecord {
     String? notes,
     String? staffId,
     String? interventionPhase,
+    DateTime? programStartTime,
+    DateTime? programEndTime,
   }) {
     return SessionRecord(
       id: id ?? this.id,
@@ -73,6 +83,8 @@ class SessionRecord {
       notes: notes ?? this.notes,
       staffId: staffId ?? this.staffId,
       interventionPhase: interventionPhase ?? this.interventionPhase,
+      programStartTime: programStartTime ?? this.programStartTime,
+      programEndTime: programEndTime ?? this.programEndTime,
     );
   }
 

@@ -161,6 +161,8 @@ class _ProgramCardState extends State<ProgramCard> {
           'percentIncorrect': percentIncorrect,
           'percentNoResponse': percentNoResponse,
           'percentPrompted': percentPrompted,
+          'programStartTime': _currentData['programStartTime'],
+          'programEndTime': _currentData['programEndTime'],
         };
       
       // FileMaker: frequency
@@ -235,10 +237,22 @@ class _ProgramCardState extends State<ProgramCard> {
       final payload = _getPayload();
       await widget.onSave(payload);
       
+      // Preserve program times when resetting data after successful save
+      final preservedProgramStartTime = _currentData['programStartTime'];
+      final preservedProgramEndTime = _currentData['programEndTime'];
+      
       // Reset data after successful save
       setState(() {
         _currentData = Map<String, dynamic>.from(widget.assignment.config);
         _originalData = Map<String, dynamic>.from(widget.assignment.config);
+        
+        // Preserve program times
+        if (preservedProgramStartTime != null) {
+          _currentData['programStartTime'] = preservedProgramStartTime;
+        }
+        if (preservedProgramEndTime != null) {
+          _currentData['programEndTime'] = preservedProgramEndTime;
+        }
       });
     } finally {
       setState(() => _isSaving = false);
