@@ -46,3 +46,4 @@ app.*.map.json
 
 # Configuration files with sensitive data
 lib/config/app_config.dart
+ios/Flutter/Flutter.xcframework/
