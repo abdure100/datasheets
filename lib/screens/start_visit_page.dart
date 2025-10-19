@@ -4,6 +4,7 @@ import '../models/client.dart';
 import '../models/visit.dart';
 import '../services/filemaker_service.dart';
 import '../providers/session_provider.dart';
+import '../services/seeder/fixed_database_seeder.dart';
 
 class StartVisitPage extends StatefulWidget {
   const StartVisitPage({super.key});
@@ -138,14 +139,13 @@ class _StartVisitPageState extends State<StartVisitPage> {
                       color: Colors.grey[600],
                     ),
                   ),
-                if (visit.startTs != null)
-                  Text(
-                    'Start: ${_formatDateTime(visit.startTs)}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[600],
-                    ),
+                Text(
+                  'Start: ${_formatDateTime(visit.startTs)}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
                   ),
+                ),
                 if (visit.endTs != null)
                   Text(
                     'End: ${_formatDateTime(visit.endTs!)}',
@@ -317,6 +317,118 @@ class _StartVisitPageState extends State<StartVisitPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Connection test error: $e')),
+        );
+      }
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _runDatabaseSeeder() async {
+    setState(() => _isLoading = true);
+    
+    try {
+      final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
+      final seeder = FixedDatabaseSeeder(fileMakerService);
+      
+      // Show confirmation dialog
+      final shouldProceed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Load Demo Data'),
+          content: const Text(
+            'This will create simplified demo records including:\n'
+            '• 1 Visit (Client skipped - already exists)\n'
+            '• 2 Behavior Definitions\n'
+            '• 2 Program Assignments\n'
+            '• 1 Session Record\n'
+            '• 1 Behavior Log\n\n'
+            'Do you want to continue?'
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Load Data'),
+            ),
+          ],
+        ),
+      );
+      
+      if (shouldProceed != true) {
+        setState(() => _isLoading = false);
+        return;
+      }
+      
+      // Show progress dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 20),
+              Text('Loading demo data...'),
+            ],
+          ),
+        ),
+      );
+      
+      // Run the seeder
+      final results = await seeder.seedSimplifiedData(
+        username: 'nafisa@test.com',
+        clientId: '03626AAB-FEF9-4325-A70D-191463DBAF2A',
+        staffId: '17ED033A-7CA9-4367-AA48-3C459DBBC24C',
+      );
+      
+      // Close progress dialog
+      if (mounted) Navigator.of(context).pop();
+      
+      // Show results
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Demo Data Loaded!'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('✅ Client: Skipped (already exists)'),
+                Text('✅ Visit: ${results['visit'] != null ? 'Created' : 'Failed'}'),
+                Text('✅ Behavior Definitions: ${results['behaviorDefinitions']?.length ?? 0}'),
+                Text('✅ Program Assignments: ${results['programAssignments']?.length ?? 0}'),
+                Text('✅ Session Records: ${results['sessionRecords']?.length ?? 0}'),
+                Text('✅ Behavior Logs: ${results['behaviorLogs']?.length ?? 0}'),
+              ],
+            ),
+            actions: [
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  _loadClients(); // Refresh the client list
+                },
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      }
+      
+    } catch (e) {
+      // Close progress dialog if open
+      if (mounted) Navigator.of(context).pop();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading demo data: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
@@ -523,6 +635,12 @@ class _StartVisitPageState extends State<StartVisitPage> {
             onPressed: _isLoading ? null : _testConnection,
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh & Validate Session',
+          ),
+          // Database Seeder Button
+          IconButton(
+            onPressed: _isLoading ? null : _runDatabaseSeeder,
+            icon: const Icon(Icons.data_object),
+            tooltip: 'Load Demo Data',
           ),
           // Staff Avatar with Dropdown
           Padding(

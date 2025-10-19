@@ -171,7 +171,13 @@ class _ProgramCardState extends State<ProgramCard> {
       
       // FileMaker: duration
       case 'duration':
-        return {'seconds': _currentData['seconds'] ?? 0};
+        return {
+          'seconds': _currentData['seconds'] ?? 0,
+          'minutes': _currentData['minutes'] ?? 0.0,
+          'phase': _currentData['phase'] ?? 'baseline',
+          'notes': _currentData['notes'] ?? '',
+          'data_type': 'duration',
+        };
       
       // FileMaker: rate
       case 'rate':
@@ -479,7 +485,9 @@ class _ProgramCardState extends State<ProgramCard> {
         return '${totals['totalCount']} events';
       
       case 'duration':
-        return '${totals['totalMinutes']} min';
+        final phase = totals['phase'] ?? 'baseline';
+        final minutes = totals['totalMinutes'] ?? 0;
+        return '${minutes} min ($phase)';
       
       case 'rate':
         return '${totals['totalCount']} in ${(totals['totalSeconds'] / 60).round()} min (${totals['overallRate']}/min)';

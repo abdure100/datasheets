@@ -551,6 +551,58 @@ class FileMakerService extends ChangeNotifier {
     }
   }
 
+  /// Update visit notes in FileMaker
+  Future<void> updateVisitNotes(String visitId, String notes) async {
+    await _ensureAuthenticated();
+    
+    try {
+      // First, find the recordId using the PrimaryKey
+      final findResponse = await _dio.post(
+        '/databases/$database/layouts/api_appointments/_find',
+        data: {
+          'query': [
+            {'PrimaryKey': '==$visitId'}
+          ]
+        },
+      );
+      
+      if (findResponse.statusCode == 200) {
+        final data = findResponse.data['response']['data'] as List<dynamic>? ?? [];
+        if (data.isNotEmpty) {
+          final recordId = data[0]['recordId']?.toString();
+          if (recordId != null) {
+            // Update the visit with notes
+            final updateData = {
+              'notes': notes,
+              'update_flagx': 6, // Custom flag for notes update
+            };
+            
+            final updateResponse = await _dio.patch(
+              '/databases/$database/layouts/api_appointments/records/$recordId',
+              data: {'fieldData': updateData},
+            );
+            
+            if (updateResponse.statusCode == 200) {
+              print('✅ Visit notes updated successfully for visit: $visitId');
+            } else {
+              print('❌ Failed to update visit notes: ${updateResponse.statusCode}');
+              throw Exception('Failed to update visit notes: ${updateResponse.statusCode}');
+            }
+          } else {
+            throw Exception('Record ID not found for visit: $visitId');
+          }
+        } else {
+          throw Exception('Visit not found: $visitId');
+        }
+      } else {
+        throw Exception('Failed to find visit: ${findResponse.statusCode}');
+      }
+    } catch (e) {
+      print('❌ Error updating visit notes: $e');
+      rethrow;
+    }
+  }
+
   Future<Visit> updateVisit(Visit visit) async {
     await _ensureAuthenticated();
     
@@ -1633,6 +1685,113 @@ class FileMakerService extends ChangeNotifier {
       }
     } catch (e) {
       if (e is DioException) {
+      }
+      rethrow;
+    }
+  }
+
+  // Database Seeder Methods
+  
+  /// Create a client record
+  Future<Client> createClient(Client client) async {
+    await _ensureAuthenticated();
+    
+    try {
+      final response = await _dio.post(
+        '/databases/$database/layouts/api_patients/records',
+        data: {
+          'fieldData': client.toJson(),
+        },
+        options: Options(
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $_token',
+            'Accept': 'application/json',
+          },
+        ),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = response.data as Map<String, dynamic>;
+        final recordId = data['response']['recordId'];
+        return client.copyWith(id: recordId.toString());
+      }
+      
+      throw Exception('Failed to create client: ${response.statusCode}');
+    } catch (e) {
+      if (e is DioException) {
+        print('❌ DioException in createClient: ${e.message}');
+        print('❌ Response data: ${e.response?.data}');
+      }
+      rethrow;
+    }
+  }
+
+  /// Create a program assignment record
+  Future<ProgramAssignment> createProgramAssignment(ProgramAssignment assignment) async {
+    await _ensureAuthenticated();
+    
+    try {
+      final response = await _dio.post(
+        '/databases/$database/layouts/dapi-patient_programs/records',
+        data: {
+          'fieldData': assignment.toJson(),
+        },
+        options: Options(
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $_token',
+            'Accept': 'application/json',
+          },
+        ),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = response.data as Map<String, dynamic>;
+        final recordId = data['response']['recordId'];
+        return assignment.copyWith(id: recordId.toString());
+      }
+      
+      throw Exception('Failed to create program assignment: ${response.statusCode}');
+    } catch (e) {
+      if (e is DioException) {
+        print('❌ DioException in createProgramAssignment: ${e.message}');
+        print('❌ Response data: ${e.response?.data}');
+      }
+      rethrow;
+    }
+  }
+
+  /// Create a behavior definition record
+  Future<BehaviorDefinition> createBehaviorDefinition(BehaviorDefinition definition) async {
+    await _ensureAuthenticated();
+    
+    try {
+      final response = await _dio.post(
+        '/databases/$database/layouts/dapi-patient_behaviors/records',
+        data: {
+          'fieldData': definition.toJson(),
+        },
+        options: Options(
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $_token',
+            'Accept': 'application/json',
+          },
+        ),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = response.data as Map<String, dynamic>;
+        final recordId = data['response']['recordId'];
+        return definition.copyWith(id: recordId.toString());
+      }
+      
+      throw Exception('Failed to create behavior definition: ${response.statusCode}');
+    } catch (e) {
+      if (e is DioException) {
+        print('❌ DioException in createBehaviorDefinition: ${e.message}');
+        print('❌ Response data: ${e.response?.data}');
       }
       rethrow;
     }

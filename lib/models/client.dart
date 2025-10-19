@@ -32,6 +32,26 @@ class Client {
   factory Client.fromJson(Map<String, dynamic> json) => _$ClientFromJson(json);
   Map<String, dynamic> toJson() => _$ClientToJson(this);
 
+  Client copyWith({
+    String? id,
+    String? name,
+    String? address,
+    String? phone,
+    String? email,
+    String? agencyId,
+    String? dateOfBirth,
+  }) {
+    return Client(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      address: address ?? this.address,
+      phone: phone ?? this.phone,
+      email: email ?? this.email,
+      agencyId: agencyId ?? this.agencyId,
+      dateOfBirth: dateOfBirth ?? this.dateOfBirth,
+    );
+  }
+
   @override
   String toString() => name;
 }

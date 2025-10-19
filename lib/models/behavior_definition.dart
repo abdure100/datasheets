@@ -58,4 +58,24 @@ class BehaviorDefinition {
   static dynamic _severityScaleToJson(Map<String, dynamic> severityScale) {
     return severityScale;
   }
+
+  BehaviorDefinition copyWith({
+    String? id,
+    String? orgId,
+    String? clientId,
+    String? name,
+    String? code,
+    String? defaultLogType,
+    Map<String, dynamic>? severityScaleJson,
+  }) {
+    return BehaviorDefinition(
+      id: id ?? this.id,
+      orgId: orgId ?? this.orgId,
+      clientId: clientId ?? this.clientId,
+      name: name ?? this.name,
+      code: code ?? this.code,
+      defaultLogType: defaultLogType ?? this.defaultLogType,
+      severityScaleJson: severityScaleJson ?? this.severityScaleJson,
+    );
+  }
 }

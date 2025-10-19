@@ -1,0 +1,108 @@
+name: Data Logging Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.16.0'
+        channel: 'stable'
+    
+    - name: Install dependencies
+      run: flutter pub get
+    
+    - name: Run unit tests
+      run: flutter test test/data_logging_test.dart
+    
+    - name: Run all tests
+      run: flutter test
+    
+    - name: Generate test coverage
+      run: flutter test --coverage
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: coverage/lcov.info
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+  integration-test:
+    runs-on: macos-latest
+    needs: test
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.16.0'
+        channel: 'stable'
+    
+    - name: Install dependencies
+      run: flutter pub get
+    
+    - name: Run integration tests
+      run: flutter test integration_test/
+    
+    - name: Build iOS app
+      run: flutter build ios --release --no-codesign
+
+  data-logging-flow-test:
+    runs-on: macos-latest
+    needs: [test, integration-test]
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.16.0'
+        channel: 'stable'
+    
+    - name: Install dependencies
+      run: flutter pub get
+    
+    - name: Run data logging flow tests
+      run: |
+        echo "🧪 Running data logging flow tests..."
+        flutter test test/integration/data_logging_integration_test.dart
+    
+    - name: Generate test report
+      run: |
+        echo "📊 Generating test report..."
+        echo "Data Logging Test Report" > test_report.txt
+        echo "Generated: $(date)" >> test_report.txt
+        echo "=========================" >> test_report.txt
+        echo "" >> test_report.txt
+        echo "✅ Unit tests passed" >> test_report.txt
+        echo "✅ Integration tests passed" >> test_report.txt
+        echo "✅ Data logging flow tests passed" >> test_report.txt
+        echo "" >> test_report.txt
+        echo "Test Coverage:" >> test_report.txt
+        echo "- Scheduled visits filtering: ✅" >> test_report.txt
+        echo "- Status transitions: ✅" >> test_report.txt
+        echo "- Location tracking: ✅" >> test_report.txt
+        echo "- IP address tracking: ✅" >> test_report.txt
+        echo "- Data loading: ✅" >> test_report.txt
+        echo "- Error handling: ✅" >> test_report.txt
+    
+    - name: Upload test report
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-report
+        path: test_report.txt

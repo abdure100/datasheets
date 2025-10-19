@@ -92,4 +92,32 @@ class ProgramAssignment {
     }
     return null;
   }
+
+  ProgramAssignment copyWith({
+    String? id,
+    String? clientId,
+    String? ltgId,
+    String? name,
+    String? dataType,
+    String? status,
+    String? programTemplateId,
+    String? criteriaJson,
+    String? configJson,
+    String? phase,
+    DateTime? masteredAt,
+  }) {
+    return ProgramAssignment(
+      id: id ?? this.id,
+      clientId: clientId ?? this.clientId,
+      ltgId: ltgId ?? this.ltgId,
+      name: name ?? this.name,
+      dataType: dataType ?? this.dataType,
+      status: status ?? this.status,
+      programTemplateId: programTemplateId ?? this.programTemplateId,
+      criteriaJson: criteriaJson ?? this.criteriaJson,
+      configJson: configJson ?? this.configJson,
+      phase: phase ?? this.phase,
+      masteredAt: masteredAt ?? this.masteredAt,
+    );
+  }
 }

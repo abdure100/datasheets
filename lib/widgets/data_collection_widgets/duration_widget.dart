@@ -19,16 +19,21 @@ class _DurationWidgetState extends State<DurationWidget> {
   int _seconds = 0;
   Timer? _timer;
   bool _isRunning = false;
+  String _phase = 'baseline';
+  final TextEditingController _notesController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _seconds = widget.config['seconds'] ?? 0;
+    _phase = widget.config['phase'] ?? 'baseline';
+    _notesController.text = widget.config['notes'] ?? '';
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _notesController.dispose();
     super.dispose();
   }
 
@@ -63,6 +68,10 @@ class _DurationWidgetState extends State<DurationWidget> {
     widget.onDataChanged({
       ...widget.config,
       'seconds': _seconds,
+      'minutes': (_seconds / 60).roundToDouble(),
+      'phase': _phase,
+      'notes': _notesController.text,
+      'data_type': 'duration',
     });
   }
 
@@ -90,6 +99,34 @@ class _DurationWidgetState extends State<DurationWidget> {
           'Duration Data Collection',
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
         ),
+        const SizedBox(height: 12),
+        
+        // Phase Selection
+        Row(
+          children: [
+            const Text('Phase:', style: TextStyle(fontWeight: FontWeight.w500)),
+            const SizedBox(width: 8),
+            DropdownButton<String>(
+              value: _phase,
+              onChanged: (String? newValue) {
+                if (newValue != null) {
+                  setState(() {
+                    _phase = newValue;
+                  });
+                  _updateData();
+                }
+              },
+              items: <String>['baseline', 'intervention', 'maintenance']
+                  .map<DropdownMenuItem<String>>((String value) {
+                return DropdownMenuItem<String>(
+                  value: value,
+                  child: Text(value.toUpperCase()),
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+        
         const SizedBox(height: 12),
         
         // Duration Display
@@ -139,6 +176,20 @@ class _DurationWidgetState extends State<DurationWidget> {
               ),
             ),
           ],
+        ),
+        
+        const SizedBox(height: 16),
+        
+        // Notes Input
+        TextField(
+          controller: _notesController,
+          onChanged: (value) => _updateData(),
+          decoration: const InputDecoration(
+            labelText: 'Notes',
+            hintText: 'Enter duration observation notes...',
+            border: OutlineInputBorder(),
+          ),
+          maxLines: 2,
         ),
       ],
     );
