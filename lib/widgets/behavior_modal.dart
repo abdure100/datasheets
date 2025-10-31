@@ -259,7 +259,7 @@ class _BehaviorModalState extends State<BehaviorModal> {
                       children: [
                         // Behavior Selection
                         DropdownButtonFormField<BehaviorDefinition>(
-                          initialValue: _selectedBehavior,
+                          value: _selectedBehavior,
                           decoration: const InputDecoration(
                             labelText: 'Behavior',
                             border: OutlineInputBorder(),

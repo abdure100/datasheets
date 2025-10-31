@@ -10,7 +10,6 @@ import '../services/note_drafting_service.dart';
 import '../providers/session_provider.dart';
 import '../widgets/program_card.dart';
 import '../widgets/behavior_board.dart';
-import '../widgets/trial_data_generation_dialog.dart';
 
 class SessionPage extends StatefulWidget {
   final Visit? visit;
@@ -68,12 +67,14 @@ class _SessionPageState extends State<SessionPage> {
     });
 
     try {
-      // Get session records from the provider
-      final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
-      final sessionRecords = sessionProvider.sessionRecords;
+      final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
+      
+      // Fetch fresh session data from FileMaker
+      print('🔄 Fetching fresh session data from FileMaker...');
+      final sessionRecords = await fileMakerService.getSessionRecordsForVisit(widget.visit!.id);
+      print('✅ Fetched ${sessionRecords.length} session records from FileMaker');
       
       // Get program assignments
-      final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
       final assignments = await fileMakerService.getProgramAssignments(widget.client!.id);
 
       // Convert to SessionData
@@ -85,6 +86,13 @@ class _SessionPageState extends State<SessionPage> {
         providerName: 'Jane Doe, BCBA', // You can get this from staff data
         npi: 'ATYPICAL', // You can get this from staff data
       );
+
+      print('🔄 Sending session data to LLM for note generation...');
+      print('📊 Session data summary:');
+      print('  - Visit ID: ${widget.visit!.id}');
+      print('  - Client: ${widget.client!.name}');
+      print('  - Session Records: ${sessionRecords.length}');
+      print('  - Assignments: ${assignments.length}');
 
       // Generate note
       final noteDraft = await NoteDraftingService.generateNoteDraft(
@@ -105,10 +113,13 @@ class _SessionPageState extends State<SessionPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Clinical note generated and saved successfully!'),
+            content: Text('Clinical note generated! Please review and submit.'),
             backgroundColor: Colors.green,
           ),
         );
+        
+        // Show review dialog instead of automatically ending
+        await _showNoteReviewDialog(noteDraft);
       }
 
     } catch (e) {
@@ -199,85 +210,7 @@ class _SessionPageState extends State<SessionPage> {
     }
   }
 
-  /// Show trial data generation popup
-  void _showTrialDataPopup() {
-    print('🔍 Trial data popup button pressed!');
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return TrialDataGenerationDialog(
-          onGenerate: _generateTrialData,
-        );
-      },
-    );
-  }
 
-  /// Generate trial data for selected client and programs
-  Future<void> _generateTrialData({
-    required String clientId,
-    required List<String> programIds,
-  }) async {
-    if (_isGeneratingNotes) return;
-
-    setState(() {
-      _isGeneratingNotes = true;
-    });
-
-    try {
-      final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
-      
-      // Get client info
-      final clients = await fileMakerService.getClients();
-      final client = clients.firstWhere((c) => c.id == clientId);
-      
-      // Get programs for the client
-      final assignments = await fileMakerService.getProgramAssignments(clientId);
-      
-      print('🎯 Generating trial data for client: ${client.name}');
-      print('📋 Total programs available: ${assignments.length}');
-      print('🎯 Processing ALL programs:');
-      for (int i = 0; i < assignments.length; i++) {
-        print('   - Program ${i + 1}: ${assignments[i].displayName} (${assignments[i].dataType})');
-      }
-      print('📊 Creating 15 sessions per program:');
-      print('   - Total programs: ${assignments.length}');
-      print('   - Sessions per program: 15');
-      print('   - Total sessions: ${assignments.length * 15}');
-      
-      // Generate 15 sessions for first and second programs
-      // Generate trial data for ALL programs
-      for (int i = 0; i < assignments.length; i++) {
-        await _generateProgramSessions(fileMakerService, clientId, assignments[i], i + 1, 15);
-      }
-      
-      setState(() {
-        _isGeneratingNotes = false;
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Trial data generated for ${client.name} - 15 sessions per program'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-
-    } catch (e) {
-      setState(() {
-        _isGeneratingNotes = false;
-      });
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error generating trial data: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
 
   /// Generate sessions for a specific program
   Future<void> _generateProgramSessions(
@@ -779,7 +712,7 @@ class _SessionPageState extends State<SessionPage> {
   }
 
 
-  Future<void> _endVisit() async {
+  Future<void> _endVisit({bool skipUnsavedDataCheck = false}) async {
     if (_isEnding || widget.visit == null) return;
     
     setState(() => _isEnding = true);
@@ -788,17 +721,22 @@ class _SessionPageState extends State<SessionPage> {
       final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
       final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
       
-      // Check if all assignments are saved
-      final activeAssignments = await fileMakerService.getProgramAssignments(widget.client!.id);
-      final totalAssignments = activeAssignments.length;
-      final savedAssignments = _savedAssignments.length;
-      
-      if (savedAssignments < totalAssignments) {
-        // Not all assignments are saved, show dialog
-        await _showSaveUnsavedDataDialog();
+      if (!skipUnsavedDataCheck) {
+        // Check if all assignments are saved
+        final activeAssignments = await fileMakerService.getProgramAssignments(widget.client!.id);
+        final totalAssignments = activeAssignments.length;
+        final savedAssignments = _savedAssignments.length;
+        
+        if (savedAssignments < totalAssignments) {
+          // Not all assignments are saved, show dialog
+          await _showSaveUnsavedDataDialog();
+        } else {
+          // All assignments are saved, proceed to end session
+          print('✅ All assignments saved, ending session directly');
+        }
       } else {
-        // All assignments are saved, proceed to end session
-        print('✅ All assignments saved, ending session directly');
+        // Skip unsaved data check (called from note submission)
+        print('✅ Skipping unsaved data check - proceeding to end session');
       }
       
       print('🛑 Ending session for visit: ${widget.visit!.id}');
@@ -844,15 +782,76 @@ class _SessionPageState extends State<SessionPage> {
            '${seconds.toString().padLeft(2, '0')}';
   }
 
+  Future<void> _showNoteReviewDialog(String noteDraft) async {
+    final TextEditingController editController = TextEditingController(text: noteDraft);
+    
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Review & Edit Clinical Notes'),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: 500,
+                child: Column(
+                  children: [
+                    const Text(
+                      'You can edit the generated notes below:',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: editController,
+                        maxLines: null,
+                        expands: true,
+                        textAlignVertical: TextAlignVertical.top,
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          hintText: 'Edit your clinical notes here...',
+                          contentPadding: EdgeInsets.all(12),
+                        ),
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('Submit & End Session'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (result == true) {
+      // User confirmed, save edited note and end session
+      final editedNote = editController.text.trim();
+      await _saveNoteToFileMaker(editedNote);
+      await _endVisit(skipUnsavedDataCheck: true);
+    }
+  }
+
   Future<void> _showEndSessionDialog() async {
     final result = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text('End Session'),
+          title: const Text('Generate & Edit Notes'),
           content: const Text(
-            'Are you sure you want to end this session? '
-            'All session data will be saved and the timer will stop.',
+            'Generate clinical notes for this session? '
+            'You will be able to review and edit the notes before submitting and ending the session.',
           ),
           actions: [
             TextButton(
@@ -861,7 +860,7 @@ class _SessionPageState extends State<SessionPage> {
             ),
             TextButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('End Session'),
+              child: const Text('Generate Notes'),
             ),
           ],
         );
@@ -869,8 +868,8 @@ class _SessionPageState extends State<SessionPage> {
     );
 
     if (result == true) {
-      // User confirmed, end the session
-      await _endVisit();
+      // User confirmed, generate notes (which will handle the end session flow)
+      await _generateNotes();
     }
   }
 
@@ -943,53 +942,10 @@ class _SessionPageState extends State<SessionPage> {
       appBar: AppBar(
         title: Text(widget.client!.name),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: const Icon(Icons.notes),
           onPressed: () => _showEndSessionDialog(),
         ),
         actions: [
-          // Generate Notes Button
-          IconButton(
-            onPressed: _isGeneratingNotes ? null : _generateNotes,
-            icon: _isGeneratingNotes 
-                ? SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                    ),
-                  )
-                : Icon(
-                    _showNotes ? Icons.notes : Icons.auto_awesome,
-                    color: _showNotes ? Colors.lightBlue[100] : Colors.cyan[300],
-                    size: 24,
-                  ),
-            tooltip: _isGeneratingNotes 
-                ? 'Generating notes...' 
-                : _showNotes 
-                    ? 'Note Generated' 
-                    : 'Generate Clinical Notes',
-            style: IconButton.styleFrom(
-              backgroundColor: _showNotes ? Colors.blue[600] : Colors.cyan[600],
-              foregroundColor: Colors.white,
-              padding: EdgeInsets.all(8),
-            ),
-          ),
-          // Generate Trial Data Button
-          IconButton(
-            onPressed: _showTrialDataPopup,
-            icon: Icon(
-              Icons.analytics,
-              color: Colors.orange[300],
-              size: 24,
-            ),
-            tooltip: 'Generate Trial Data',
-            style: IconButton.styleFrom(
-              backgroundColor: Colors.orange[600],
-              foregroundColor: Colors.white,
-              padding: EdgeInsets.all(8),
-            ),
-          ),
           Text(
             _formatDuration(_elapsed),
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -1129,21 +1085,21 @@ class _SessionPageState extends State<SessionPage> {
                           ],
                         ),
                         const SizedBox(height: 12),
-                        // End Session Button - Second Row
+                        // Generate Notes Button - Second Row
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton.icon(
-                            onPressed: _isEnding ? null : _endVisit,
-                            icon: _isEnding 
+                            onPressed: _isGeneratingNotes ? null : _generateNotes,
+                            icon: _isGeneratingNotes 
                                 ? const SizedBox(
                                     width: 16,
                                     height: 16,
                                     child: CircularProgressIndicator(strokeWidth: 2),
                                   )
-                                : const Icon(Icons.stop),
-                            label: Text(_isEnding ? 'Ending...' : 'End Session'),
+                                : const Icon(Icons.auto_awesome),
+                            label: Text(_isGeneratingNotes ? 'Generating Notes...' : 'Generate & Edit Notes'),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.red,
+                              backgroundColor: Colors.blue,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 12),
                             ),

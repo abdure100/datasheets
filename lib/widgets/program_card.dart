@@ -50,28 +50,40 @@ class _ProgramCardState extends State<ProgramCard> {
       case 'discrete_trial':
         return TrialsWidget(
           config: _currentData,
-          onDataChanged: (data) => setState(() => _currentData = data),
+          onDataChanged: (data) {
+            setState(() => _currentData = data);
+            _autoSaveData(); // Automatically save when data changes
+          },
         );
       
       // FileMaker: frequency
       case 'frequency':
         return FrequencyWidget(
           config: _currentData,
-          onDataChanged: (data) => setState(() => _currentData = data),
+          onDataChanged: (data) {
+            setState(() => _currentData = data);
+            _autoSaveData(); // Automatically save when data changes
+          },
         );
       
       // FileMaker: duration
       case 'duration':
         return DurationWidget(
           config: _currentData,
-          onDataChanged: (data) => setState(() => _currentData = data),
+          onDataChanged: (data) {
+            setState(() => _currentData = data);
+            _autoSaveData(); // Automatically save when data changes
+          },
         );
       
       // FileMaker: rate
       case 'rate':
         return RateWidget(
           config: _currentData,
-          onDataChanged: (data) => setState(() => _currentData = data),
+          onDataChanged: (data) {
+            setState(() => _currentData = data);
+            _autoSaveData(); // Automatically save when data changes
+          },
         );
       
       // FileMaker: task_analysis
@@ -79,7 +91,10 @@ class _ProgramCardState extends State<ProgramCard> {
       case 'task_analysis':
         return TaskAnalysisWidget(
           config: _currentData,
-          onDataChanged: (data) => setState(() => _currentData = data),
+          onDataChanged: (data) {
+            setState(() => _currentData = data);
+            _autoSaveData(); // Automatically save when data changes
+          },
         );
       
       // FileMaker: time_sampling
@@ -87,7 +102,10 @@ class _ProgramCardState extends State<ProgramCard> {
       case 'time_sampling':
         return TimeSamplingWidget(
           config: _currentData,
-          onDataChanged: (data) => setState(() => _currentData = data),
+          onDataChanged: (data) {
+            setState(() => _currentData = data);
+            _autoSaveData(); // Automatically save when data changes
+          },
         );
       
       // FileMaker: rating_scale
@@ -95,7 +113,10 @@ class _ProgramCardState extends State<ProgramCard> {
       case 'rating_scale':
         return RatingScaleWidget(
           config: _currentData,
-          onDataChanged: (data) => setState(() => _currentData = data),
+          onDataChanged: (data) {
+            setState(() => _currentData = data);
+            _autoSaveData(); // Automatically save when data changes
+          },
         );
       
       // FileMaker: abc_data
@@ -103,7 +124,10 @@ class _ProgramCardState extends State<ProgramCard> {
       case 'abc_data':
         return ABCWidget(
           config: _currentData,
-          onDataChanged: (data) => setState(() => _currentData = data),
+          onDataChanged: (data) {
+            setState(() => _currentData = data);
+            _autoSaveData(); // Automatically save when data changes
+          },
         );
       
       default:
@@ -229,10 +253,6 @@ class _ProgramCardState extends State<ProgramCard> {
     }
   }
 
-  bool _hasUnsavedData() {
-    // Compare current data with original data
-    return _currentData.toString() != _originalData.toString();
-  }
 
   Future<void> _saveData() async {
     if (_isSaving) return;
@@ -262,6 +282,24 @@ class _ProgramCardState extends State<ProgramCard> {
       });
     } finally {
       setState(() => _isSaving = false);
+    }
+  }
+
+  /// Automatically save data when it changes (without resetting the form)
+  Future<void> _autoSaveData() async {
+    if (_isSaving) return; // Prevent multiple simultaneous saves
+    
+    try {
+      final payload = _getPayload();
+      await widget.onSave(payload);
+      
+      // Update original data to reflect the saved state
+      _originalData = Map<String, dynamic>.from(_currentData);
+      
+      print('✅ Auto-saved data for ${widget.assignment.name}: $payload');
+    } catch (e) {
+      print('❌ Auto-save failed for ${widget.assignment.name}: $e');
+      // Don't show error to user for auto-save failures to avoid interrupting workflow
     }
   }
 
@@ -330,41 +368,6 @@ class _ProgramCardState extends State<ProgramCard> {
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          // Unsaved Indicator - Second Row (if needed)
-                          if (_hasUnsavedData()) ...[
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: Colors.orange[100],
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(color: Colors.orange[300]!),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.edit,
-                                        size: 12,
-                                        color: Colors.orange[700],
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        'Unsaved',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w500,
-                                          color: Colors.orange[700],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
                           Text(
                             widget.assignment.dataType ?? 'Unknown',
                             style: TextStyle(
@@ -417,25 +420,6 @@ class _ProgramCardState extends State<ProgramCard> {
                 
                 const SizedBox(height: 16),
                 
-                // Save Button
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: _isSaving ? null : _saveData,
-                    icon: _isSaving
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.save),
-                    label: Text(_isSaving ? 'Saving...' : 'Save Data'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _hasUnsavedData() ? Colors.orange : Colors.blue,
-                      foregroundColor: Colors.white,
-                    ),
-                  ),
-                ),
                 
                 // Behavior Logging Button (only show if visit/client info available)
                 if (widget.visitId != null && widget.clientId != null) ...[

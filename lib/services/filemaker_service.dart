@@ -35,6 +35,8 @@ class FileMakerService extends ChangeNotifier {
     _dio.options.baseUrl = baseUrl;
     _dio.options.connectTimeout = const Duration(seconds: AppConfig.connectionTimeout);
     _dio.options.receiveTimeout = const Duration(seconds: AppConfig.receiveTimeout);
+    _dio.options.headers['Content-Type'] = 'application/json';
+    _dio.options.headers['Accept'] = 'application/json';
     
     // Don't set User-Agent or Connection headers as they cause "unsafe header" warnings in web browsers
     // These headers are not essential for FileMaker API functionality
@@ -133,9 +135,14 @@ class FileMakerService extends ChangeNotifier {
   Future<bool> authenticate() async {
     try {
       final credentials = base64Encode(utf8.encode('$username:$password'));
+      final url = '$baseUrl/databases/$database/sessions';
+      
+      print('🔐 Attempting authentication to: $url');
+      print('🔐 Database: $database');
+      print('🔐 Username: $username');
       
       final response = await http.post(
-        Uri.parse('$baseUrl/databases/$database/sessions'),
+        Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Basic $credentials',
@@ -144,6 +151,9 @@ class FileMakerService extends ChangeNotifier {
       );
 
 
+      print('🔐 Response status: ${response.statusCode}');
+      print('🔐 Response body: ${response.body}');
+      
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         _token = data['response']['token'];
@@ -1095,6 +1105,84 @@ class FileMakerService extends ChangeNotifier {
     }
     
     throw Exception('Failed to update session record: ${updateResponse.statusCode}');
+  }
+
+  // Get all session records for a specific visit
+  Future<List<SessionRecord>> getSessionRecordsForVisit(String visitId) async {
+    await _ensureAuthenticated();
+    
+    try {
+      print('🔍 Fetching session records for visit: $visitId');
+      
+      final response = await _dio.post(
+        '/databases/$database/layouts/api_sessiondata/_find',
+        data: {
+          'query': [
+            {
+              'visitId': '==$visitId',
+            }
+          ],
+          'limit': 1000  // Get up to 1000 records for this visit
+        },
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer $_token',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+        ),
+      );
+
+      print('🔍 Session records response status: ${response.statusCode}');
+      print('🔍 Session records response data: ${response.data}');
+
+      if (response.statusCode == 200) {
+        final data = response.data as Map<String, dynamic>;
+        final records = data['response']['data'] as List<dynamic>?;
+        
+        if (records == null || records.isEmpty) {
+          print('📝 No session records found for visit: $visitId');
+          return [];
+        }
+
+        final sessionRecords = records.map((record) {
+          final fieldData = record['fieldData'] as Map<String, dynamic>;
+          return SessionRecord(
+            id: record['recordId'] as String,
+            visitId: fieldData['visitId'] as String? ?? '',
+            clientId: fieldData['clientId'] as String? ?? '',
+            assignmentId: fieldData['assignmentId'] as String? ?? '',
+            startedAt: fieldData['startedAt_ts'] != null 
+                ? DateTime.parse(fieldData['startedAt_ts'] as String)
+                : null,
+            updatedAt: fieldData['updatedAt_ts'] != null 
+                ? DateTime.parse(fieldData['updatedAt_ts'] as String)
+                : null,
+            payload: fieldData['payload_json'] != null 
+                ? jsonDecode(fieldData['payload_json'] as String) as Map<String, dynamic>
+                : {},
+            staffId: fieldData['staffId'] as String?,
+            interventionPhase: fieldData['intervention_phase'] as String? ?? 'baseline',
+            programStartTime: fieldData['program_start_time'] != null 
+                ? DateTime.parse(fieldData['program_start_time'] as String)
+                : null,
+            programEndTime: fieldData['program_end_time'] != null 
+                ? DateTime.parse(fieldData['program_end_time'] as String)
+                : null,
+            notes: fieldData['notes'] as String?,
+          );
+        }).toList();
+
+        print('✅ Fetched ${sessionRecords.length} session records for visit: $visitId');
+        return sessionRecords;
+      } else {
+        print('❌ Failed to fetch session records: ${response.statusCode}');
+        throw Exception('Failed to fetch session records: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('❌ Error fetching session records: $e');
+      throw Exception('Error fetching session records: $e');
+    }
   }
 
   // Behavior Definition operations

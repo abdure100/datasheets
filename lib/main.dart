@@ -42,7 +42,7 @@ class DataSheetsApp extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             ),
           ),
-          cardTheme: const CardThemeData(
+          cardTheme: CardTheme(
             elevation: 2,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.all(Radius.circular(8)),

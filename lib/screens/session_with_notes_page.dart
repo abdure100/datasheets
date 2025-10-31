@@ -30,6 +30,7 @@ class _SessionWithNotesPageState extends State<SessionWithNotesPage> {
   Timer? _timer;
   Duration _elapsed = Duration.zero;
   bool _isEnding = false;
+  bool _isGeneratingNotes = false;
   bool _showNotes = false;
   String _generatedNote = '';
   final Set<String> _savedAssignments = {}; // Track which assignments have been saved
@@ -59,7 +60,11 @@ class _SessionWithNotesPageState extends State<SessionWithNotesPage> {
 
   /// Generate clinical notes from session data
   Future<void> _generateNotes() async {
-    if (widget.visit == null || widget.client == null) return;
+    if (widget.visit == null || widget.client == null || _isGeneratingNotes) return;
+
+    setState(() {
+      _isGeneratingNotes = true;
+    });
 
     try {
       // Get session records from the provider
@@ -89,6 +94,7 @@ class _SessionWithNotesPageState extends State<SessionWithNotesPage> {
       setState(() {
         _generatedNote = noteDraft;
         _showNotes = true;
+        _isGeneratingNotes = false;
       });
 
       // Show success message
@@ -99,9 +105,16 @@ class _SessionWithNotesPageState extends State<SessionWithNotesPage> {
             backgroundColor: Colors.green,
           ),
         );
+        
+        // After generating notes, end the session
+        await _endVisit();
       }
 
     } catch (e) {
+      setState(() {
+        _isGeneratingNotes = false;
+      });
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -559,21 +572,21 @@ class _SessionWithNotesPageState extends State<SessionWithNotesPage> {
                   
                   const SizedBox(height: 16),
                   
-                  // End Session Button
+                  // Generate Notes Button
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: _isEnding ? null : _showEndSessionDialog,
-                      icon: _isEnding 
+                      onPressed: _isGeneratingNotes ? null : _generateNotes,
+                      icon: _isGeneratingNotes 
                           ? const SizedBox(
                               width: 20,
                               height: 20,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Icon(Icons.stop),
-                      label: Text(_isEnding ? 'Ending Session...' : 'End Session'),
+                          : const Icon(Icons.auto_awesome),
+                      label: Text(_isGeneratingNotes ? 'Generating Notes...' : 'Generate Notes'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
+                        backgroundColor: Colors.blue,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                       ),

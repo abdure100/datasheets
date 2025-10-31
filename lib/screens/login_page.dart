@@ -29,12 +29,6 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
-  void _fillDemoCredentials() {
-    setState(() {
-      _usernameController.text = 'nafisa@test.com';
-      _passwordController.text = 'Welcome123\$';
-    });
-  }
 
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
@@ -201,55 +195,6 @@ class _LoginPageState extends State<LoginPage> {
                                   'Login',
                                   style: TextStyle(fontSize: 16),
                                 ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      
-                      // Demo Credentials Section
-                      Card(
-                        color: Colors.blue[50],
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(Icons.info_outline, color: Colors.blue[700], size: 20),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    'Demo Credentials',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.blue[700],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Email: nafisa@test.com',
-                                style: TextStyle(color: Colors.blue[600]),
-                              ),
-                              Text(
-                                'Password: Welcome123\$',
-                                style: TextStyle(color: Colors.blue[600]),
-                              ),
-                              const SizedBox(height: 8),
-                              SizedBox(
-                                width: double.infinity,
-                                child: OutlinedButton.icon(
-                                  onPressed: _isLoading ? null : _fillDemoCredentials,
-                                  icon: const Icon(Icons.person_add, size: 16),
-                                  label: const Text('Use Demo Credentials'),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: Colors.blue[700],
-                                    side: BorderSide(color: Colors.blue[300]!),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
                         ),
                       ),
                       const SizedBox(height: 16),

@@ -6,6 +6,8 @@ import '../models/program_assignment.dart';
 import '../models/behavior_definition.dart';
 import '../models/session_record.dart';
 import '../services/filemaker_service.dart';
+import '../services/note_drafting_service.dart';
+import '../providers/session_provider.dart';
 import '../widgets/program_card.dart';
 import '../widgets/behavior_board.dart';
 
@@ -30,6 +32,10 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
   List<ProgramAssignment> _assignments = [];
   List<BehaviorDefinition> _behaviorDefs = [];
   Visit? _createdVisit;
+  bool _isGeneratingNotes = false;
+  bool _showNotes = false;
+  String _generatedNote = '';
+  final TextEditingController _noteController = TextEditingController();
 
   @override
   void initState() {
@@ -49,14 +55,21 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
     }
   }
 
+  @override
+  void dispose() {
+    _noteController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     
     try {
       final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
       
-      // Load program assignments
-      final assignments = await fileMakerService.getProgramAssignments(_client.id);
+      // Load program assignments and filter by active status
+      final allAssignments = await fileMakerService.getProgramAssignments(_client.id);
+      final assignments = allAssignments.where((a) => a.isActive).toList();
       
       // Load behavior definitions
       final behaviorDefs = await fileMakerService.getBehaviorDefinitions(clientId: _client.id);
@@ -187,10 +200,242 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
       final createdVisit = await fileMakerService.createVisitWithDio(visit, skipLocation: true);
       setState(() => _createdVisit = createdVisit);
       
+      // Initialize session provider
+      final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
+      sessionProvider.startVisit(createdVisit, _client);
+      sessionProvider.setActiveAssignments(_assignments);
+      
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error creating session: $e')),
+        );
+      }
+    }
+  }
+
+  /// Generate clinical notes from session data
+  Future<void> _generateNotes() async {
+    if (_createdVisit == null || _isGeneratingNotes) return;
+
+    setState(() {
+      _isGeneratingNotes = true;
+    });
+
+    try {
+      final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
+      
+      // Fetch fresh session data from FileMaker
+      print('🔄 Fetching fresh session data from FileMaker...');
+      final sessionRecords = await fileMakerService.getSessionRecordsForVisit(_createdVisit!.id);
+      print('✅ Fetched ${sessionRecords.length} session records from FileMaker');
+      
+      // Get program assignments (already loaded)
+      final assignments = _assignments;
+
+      // Convert to SessionData
+      final sessionData = NoteDraftingService.convertSessionRecordsToSessionData(
+        visit: _createdVisit!,
+        client: _client,
+        sessionRecords: sessionRecords,
+        assignments: assignments,
+        providerName: 'Jane Doe, BCBA', // You can get this from staff data
+        npi: 'ATYPICAL', // You can get this from staff data
+      );
+
+      print('🔄 Sending session data to LLM for note generation...');
+      print('📊 Session data summary:');
+      print('  - Visit ID: ${_createdVisit!.id}');
+      print('  - Client: ${_client.name}');
+      print('  - Session Records: ${sessionRecords.length}');
+      print('  - Assignments: ${assignments.length}');
+      
+      // Generate note
+      final noteDraft = await NoteDraftingService.generateNoteDraft(
+        session: sessionData,
+        ragContext: 'Use SOAP tone; focus on measurable outcomes and data-driven observations.',
+      );
+
+      setState(() {
+        _generatedNote = noteDraft;
+        _showNotes = true;
+        _isGeneratingNotes = false;
+      });
+
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Clinical note generated! Please review and submit.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        
+        // Show review dialog instead of automatically ending
+        await _showNoteReviewDialog(noteDraft);
+      }
+
+    } catch (e) {
+      setState(() {
+        _isGeneratingNotes = false;
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error generating note: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _showNoteReviewDialog(String noteDraft) async {
+    final TextEditingController editController = TextEditingController(text: noteDraft);
+    
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Review & Edit Clinical Notes'),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: 500,
+                child: Column(
+                  children: [
+                    const Text(
+                      'You can edit the generated notes below:',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: editController,
+                        maxLines: null,
+                        expands: true,
+                        textAlignVertical: TextAlignVertical.top,
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          hintText: 'Edit your clinical notes here...',
+                          contentPadding: EdgeInsets.all(12),
+                        ),
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('Submit & End Session'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (result == true) {
+      // User confirmed, save edited note and end session
+      final editedNote = editController.text.trim();
+      await _saveNoteToFileMaker(editedNote);
+      await _endSession();
+    }
+  }
+
+  Future<void> _saveNoteToFileMaker(String note) async {
+    if (_createdVisit == null) return;
+    
+    try {
+      final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
+      
+      // Save note to visit record
+      await fileMakerService.updateVisitNotes(_createdVisit!.id, note);
+      
+      // Also save to session records if any exist
+      final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
+      if (sessionProvider.sessionRecords.isNotEmpty) {
+        final latestRecord = sessionProvider.sessionRecords.last;
+        // Create updated record with notes
+        final updatedRecord = SessionRecord(
+          id: latestRecord.id,
+          visitId: latestRecord.visitId,
+          clientId: latestRecord.clientId,
+          assignmentId: latestRecord.assignmentId,
+          startedAt: latestRecord.startedAt,
+          updatedAt: DateTime.now(),
+          payload: latestRecord.payload,
+          staffId: latestRecord.staffId,
+          interventionPhase: latestRecord.interventionPhase,
+          programStartTime: latestRecord.programStartTime,
+          programEndTime: latestRecord.programEndTime,
+          notes: note, // Add the note here
+        );
+        await fileMakerService.updateSessionRecord(updatedRecord);
+      }
+      
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error saving note: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _endSession() async {
+    if (_createdVisit == null) return;
+    
+    try {
+      final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
+      final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
+      
+      // Close the visit using the manually entered end time
+      final endDateTime = DateTime(
+        _selectedDate.year,
+        _selectedDate.month,
+        _selectedDate.day,
+        _selectedTimeOut.hour,
+        _selectedTimeOut.minute,
+      );
+      final result = await fileMakerService.closeVisit(_createdVisit!.id, endDateTime);
+      
+      // Clear session provider
+      sessionProvider.endVisit();
+      
+      if (mounted) {
+        // Navigate back to overview
+        Navigator.pushReplacementNamed(context, '/start-visit');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Session ended successfully. '
+              'Billable minutes: ${result['billableMinutes'] ?? 0}, '
+              'Units: ${result['billableUnits'] ?? 0}',
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error ending session: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -210,9 +455,16 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
     setState(() => _isSaving = true);
     
     try {
-      // Update visit status to Submitted when session is completed
+      // Update visit status to Submitted when session is completed using manual end time
       final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
-      await fileMakerService.closeVisit(_createdVisit!.id, DateTime.now());
+      final endDateTime = DateTime(
+        _selectedDate.year,
+        _selectedDate.month,
+        _selectedDate.day,
+        _selectedTimeOut.hour,
+        _selectedTimeOut.minute,
+      );
+      await fileMakerService.closeVisit(_createdVisit!.id, endDateTime);
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -434,6 +686,28 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
                     ),
                     const SizedBox(height: 20),
                     
+                    // Generate Notes Button (moved to top)
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _isGeneratingNotes ? null : _generateNotes,
+                        icon: _isGeneratingNotes 
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.auto_awesome),
+                        label: Text(_isGeneratingNotes ? 'Generating Notes...' : 'Generate & Edit Notes'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    
                     // Program Assignments
                     if (_assignments.isNotEmpty) ...[
                       const Text(
@@ -519,26 +793,6 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
                       const SizedBox(height: 20),
                     ],
                     
-                    // Save Button
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: _isSaving ? null : _showSaveAndCloseDialog,
-                        icon: _isSaving 
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                              )
-                            : const Icon(Icons.save),
-                        label: Text(_isSaving ? 'Saving...' : 'Save and Close'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                        ),
-                      ),
-                    ),
                     const SizedBox(height: 20),
                   ],
                 ),
@@ -579,35 +833,6 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
     }
   }
 
-  Future<void> _showSaveAndCloseDialog() async {
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Save and Close'),
-          content: const Text(
-            'Are you sure you want to save and close this session?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Yes, Save and Close'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (result == true) {
-      // Save the session and go back to client list
-      await _saveSession();
-      // Navigation is handled by _saveSession() method
-    }
-  }
 
   Future<void> _saveProgramData(String assignmentId, Map<String, dynamic> data) async {
     if (_createdVisit?.id == null) return;
