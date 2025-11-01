@@ -21,6 +21,7 @@ SessionRecord _$SessionRecordFromJson(Map<String, dynamic> json) =>
       programStartTime:
           SessionRecord._dateTimeFromJson(json['program_start_time']),
       programEndTime: SessionRecord._dateTimeFromJson(json['program_end_time']),
+      company: json['Company'] as String?,
     );
 
 Map<String, dynamic> _$SessionRecordToJson(SessionRecord instance) =>
@@ -39,4 +40,5 @@ Map<String, dynamic> _$SessionRecordToJson(SessionRecord instance) =>
           SessionRecord._dateTimeToJson(instance.programStartTime),
       'program_end_time':
           SessionRecord._dateTimeToJson(instance.programEndTime),
+      'Company': instance.company,
     };

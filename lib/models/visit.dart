@@ -38,6 +38,8 @@ class Visit {
   final String? clientName;
   @JsonKey(name: 'assignedto_name', includeToJson: false)
   final String? staffName;
+  @JsonKey(name: 'staff_title', includeToJson: false)
+  final String? staffTitle;
   @JsonKey(name: 'submitterIPAddress', includeToJson: false)
   final String? submitterIPAddress;
 
@@ -56,6 +58,7 @@ class Visit {
     this.timeIn,
     this.clientName,
     this.staffName,
+    this.staffTitle,
     this.submitterIPAddress,
   });
 
@@ -77,6 +80,7 @@ class Visit {
     String? timeIn,
     String? clientName,
     String? staffName,
+    String? staffTitle,
     String? submitterIPAddress,
   }) {
     return Visit(
@@ -94,6 +98,7 @@ class Visit {
       timeIn: timeIn ?? this.timeIn,
       clientName: clientName ?? this.clientName,
       staffName: staffName ?? this.staffName,
+      staffTitle: staffTitle ?? this.staffTitle,
       submitterIPAddress: submitterIPAddress ?? this.submitterIPAddress,
     );
   }

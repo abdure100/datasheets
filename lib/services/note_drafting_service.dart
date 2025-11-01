@@ -6,6 +6,8 @@ import 'package:datasheets/models/visit.dart';
 import 'package:datasheets/models/client.dart';
 import 'package:datasheets/models/program_assignment.dart';
 import 'package:datasheets/config/note_drafting_config.dart';
+import 'package:datasheets/services/mcp_service.dart';
+import 'package:datasheets/services/token_service.dart';
 
 /// Service for generating clinical notes using AI
 class NoteDraftingService {
@@ -34,8 +36,15 @@ Context (templates/payer rules/exemplars):
 ${ragContext.isEmpty ? NoteDraftingConfig.defaultRagContext : ragContext}
 
 Instruction:
-Stream a clear, one-paragraph summary suitable for the session note preview.
-Keep it factual and concise (2–4 sentences). Do not include PHI beyond what is provided.
+Generate a structured clinical session note following this format:
+- Session Summary: One paragraph describing who conducted the session, duration, service type, and overall engagement
+- Goals Targeted: List the specific goals/programs addressed
+- Interventions: Describe the interventions and teaching strategies used
+- Data Collected: Summarize the data collected during the session
+- Caregiver Involvement: Note parent/caregiver participation and observations
+- Plan: Outline next steps and program modifications
+
+Keep it factual, professional, and payer-appropriate. Do not include PHI beyond what is provided.
 '''.trim();
 
     return [
@@ -45,12 +54,60 @@ Keep it factual and concise (2–4 sentences). Do not include PHI beyond what is
   }
 
   /// Generate note draft from session data
+  /// Uses MCP API if available, falls back to direct API call
   static Future<String> generateNoteDraft({
     required SessionData session,
     String ragContext = '',
     String? apiKey,
+    String? visitId,
+    String? assignmentId,
+    bool useMCP = true, // Use MCP by default if token is available
   }) async {
     try {
+      // Try MCP API first if enabled and token is available
+      if (useMCP) {
+        final sanctumToken = await TokenService.getSanctumToken();
+        if (sanctumToken != null && sanctumToken.isNotEmpty) {
+          try {
+            print('🔄 Using MCP API for note generation...');
+            final mcpService = MCPService(token: sanctumToken);
+            
+            // Build messages in OpenAI format
+            final messages = buildNoteDraftMessages(session: session, ragContext: ragContext);
+            
+            // Use MCP completions endpoint with context
+            final response = await mcpService.completions(
+              messages: messages,
+              visitId: visitId,
+              assignmentId: assignmentId,
+              model: NoteDraftingConfig.model,
+              temperature: NoteDraftingConfig.temperature,
+              maxTokens: NoteDraftingConfig.maxTokens,
+              stream: false,
+            );
+            
+            if (response['success'] == true && response['response'] != null) {
+              final completionData = response['response'];
+              if (completionData['choices'] != null && completionData['choices'].isNotEmpty) {
+                final content = completionData['choices'][0]['message']['content'];
+                if (content != null) {
+                  print('✅ Note generated successfully via MCP API');
+                  return content;
+                }
+              }
+            }
+            print('⚠️ MCP API response format unexpected, falling back to direct API');
+          } catch (e) {
+            print('⚠️ MCP API failed, falling back to direct API: $e');
+            // Fall through to direct API call
+          }
+        } else {
+          print('⚠️ No Sanctum token available, using direct API');
+        }
+      }
+      
+      // Fallback to direct API call
+      print('🔄 Using direct API for note generation...');
       final messages = buildNoteDraftMessages(session: session, ragContext: ragContext);
       final configApiKey = apiKey ?? NoteDraftingConfig.getApiKey();
       
@@ -152,17 +209,39 @@ Keep it factual and concise (2–4 sentences). Do not include PHI beyond what is
     required String npi,
     String? apiKey,
   }) {
-    // Extract goals from assignments
-    final goalsList = assignments.map((a) => a.displayName).toList();
+    // Extract unique goals from assignments that have session records
+    // Only include goals/programs that have actual session data
+    final assignmentIdsWithData = sessionRecords
+        .map((r) => r.assignmentId)
+        .where((id) => id.isNotEmpty)
+        .toSet();
     
-    // Generate data summary from session records
-    final dataSummary = _generateDataSummary(sessionRecords);
+    final goalsSet = <String>{};
+    for (final assignment in assignments) {
+      // Only include if it has session data OR if no session records exist (show all active assignments)
+      if (sessionRecords.isEmpty || 
+          (assignment.id != null && assignmentIdsWithData.contains(assignment.id))) {
+        goalsSet.add(assignment.displayName);
+      }
+    }
+    final goalsList = goalsSet.toList()..sort();
+    
+    // Create map of assignmentId to assignment name for data summary
+    final assignmentMap = <String, String>{};
+    for (final assignment in assignments) {
+      if (assignment.id != null) {
+        assignmentMap[assignment.id!] = assignment.displayName;
+      }
+    }
+    
+    // Generate data summary from session records with assignment names
+    final dataSummary = _generateDataSummary(sessionRecords, assignmentMap);
     
     // Generate behaviors summary
     final behaviors = _generateBehaviorsSummary(sessionRecords);
     
-    // Generate interventions summary
-    final interventions = _generateInterventionsSummary(sessionRecords);
+    // Generate interventions summary from session records and assignments
+    final interventions = _generateInterventionsSummary(sessionRecords, assignments);
     
     // Generate caregiver involvement (placeholder)
     final caregiver = 'Parent observed and participated in session';
@@ -170,16 +249,50 @@ Keep it factual and concise (2–4 sentences). Do not include PHI beyond what is
     // Generate plan/next steps
     final plan = _generatePlanFromRecords(sessionRecords, assignments);
     
+    // Format date as MM/DD/YYYY
+    String formattedDate;
+    if (visit.appointmentDate != null && visit.appointmentDate!.isNotEmpty) {
+      // If appointmentDate is already in MM/DD/YYYY format, use it
+      if (visit.appointmentDate!.contains('/')) {
+        formattedDate = visit.appointmentDate!;
+      } else {
+        // Convert from YYYY-MM-DD to MM/DD/YYYY
+        try {
+          final dateTime = DateTime.parse(visit.appointmentDate!);
+          formattedDate = _formatDate(dateTime);
+        } catch (e) {
+          formattedDate = visit.appointmentDate!;
+        }
+      }
+    } else {
+      formattedDate = _formatDate(visit.startTs);
+    }
+    
+    // Format DOB as MM/DD/YYYY if provided
+    String formattedDob = 'Not provided';
+    if (client.dateOfBirth != null && client.dateOfBirth!.isNotEmpty) {
+      if (client.dateOfBirth!.contains('/')) {
+        formattedDob = client.dateOfBirth!;
+      } else {
+        try {
+          final dateTime = DateTime.parse(client.dateOfBirth!);
+          formattedDob = _formatDate(dateTime);
+        } catch (e) {
+          formattedDob = client.dateOfBirth!;
+        }
+      }
+    }
+    
     return SessionData(
       providerName: providerName,
       npi: npi,
       clientName: client.name,
-      dob: client.dateOfBirth ?? 'Not provided',
-      date: visit.appointmentDate ?? DateTime.now().toIso8601String().split('T')[0],
-      startTime: visit.timeIn ?? 'Not provided',
-      endTime: visit.endTs?.toIso8601String().split('T')[1].substring(0, 5) ?? 'Not provided',
+      dob: formattedDob,
+      date: formattedDate,
+      startTime: visit.timeIn?.isNotEmpty == true ? visit.timeIn! : _formatTime(visit.startTs),
+      endTime: visit.endTs != null ? _formatTime(visit.endTs!) : 'Not provided',
       durationMinutes: _calculateDurationMinutes(visit),
-      serviceName: visit.serviceCode ?? 'Adaptive Behavior Treatment',
+      serviceName: visit.serviceCode,
       cpt: '97153', // Default CPT code
       modifiers: ['UC'], // Default modifier
       pos: '11', // Office/Outpatient
@@ -192,64 +305,87 @@ Keep it factual and concise (2–4 sentences). Do not include PHI beyond what is
     );
   }
 
-  /// Generate data summary from session records
-  static String _generateDataSummary(List<SessionRecord> records) {
+  /// Generate data summary from session records with assignment names
+  static String _generateDataSummary(List<SessionRecord> records, Map<String, String> assignmentMap) {
     if (records.isEmpty) return 'No data collected';
     
     final summaries = <String>[];
     
     for (final record in records) {
       final payload = record.payload;
-      final dataType = payload['dataType'] as String?;
+      final dataType = payload['dataType'] as String? ?? payload['data_type'] as String?;
+      
+      // Get assignment name from map, fallback to ID if not found
+      final assignmentName = assignmentMap[record.assignmentId] ?? record.assignmentId;
       
       switch (dataType) {
         case 'percentCorrect':
           final hits = payload['hits'] as int? ?? 0;
           final totalTrials = payload['totalTrials'] as int? ?? 0;
           final percentage = payload['percentage'] as double? ?? 0.0;
-          summaries.add('${record.assignmentId}: $hits/$totalTrials trials ($percentage% accuracy)');
+          if (totalTrials > 0) {
+            summaries.add('$assignmentName: $hits/$totalTrials trials (${percentage.toStringAsFixed(1)}% accuracy)');
+          } else {
+            summaries.add('$assignmentName: Percent correct data collected');
+          }
           break;
         case 'frequency':
           final count = payload['count'] as int? ?? 0;
           final rate = payload['rate'] as double? ?? 0.0;
-          summaries.add('${record.assignmentId}: $count occurrences (rate: $rate/min)');
+          summaries.add('$assignmentName: $count occurrences (rate: ${rate.toStringAsFixed(2)}/min)');
           break;
         case 'duration':
-          final duration = payload['duration'] as double? ?? 0.0;
-          summaries.add('${record.assignmentId}: ${duration}min duration');
+          final duration = payload['duration'] as double? ?? payload['minutes'] as double? ?? 0.0;
+          if (duration > 0) {
+            summaries.add('$assignmentName: ${duration.toStringAsFixed(1)} minutes duration');
+          } else {
+            summaries.add('$assignmentName: Duration data collected');
+          }
           break;
         case 'rate':
           final events = payload['events'] as int? ?? 0;
           final rate = payload['rate'] as double? ?? 0.0;
-          summaries.add('${record.assignmentId}: $events events (rate: $rate/min)');
+          summaries.add('$assignmentName: $events events (rate: ${rate.toStringAsFixed(2)}/min)');
           break;
         case 'taskAnalysis':
           final completedCount = payload['completedCount'] as int? ?? 0;
           final totalSteps = payload['totalSteps'] as int? ?? 0;
           final percentage = payload['percentage'] as double? ?? 0.0;
-          summaries.add('${record.assignmentId}: $completedCount/$totalSteps steps ($percentage% completion)');
+          if (totalSteps > 0) {
+            summaries.add('$assignmentName: $completedCount/$totalSteps steps (${percentage.toStringAsFixed(1)}% completion)');
+          } else {
+            summaries.add('$assignmentName: Task analysis data collected');
+          }
           break;
         case 'timeSampling':
           final onTaskIntervals = payload['onTaskIntervals'] as int? ?? 0;
           final intervals = payload['intervals'] as int? ?? 0;
           final percentage = payload['percentage'] as double? ?? 0.0;
-          summaries.add('${record.assignmentId}: $onTaskIntervals/$intervals intervals on-task ($percentage%)');
+          if (intervals > 0) {
+            summaries.add('$assignmentName: $onTaskIntervals/$intervals intervals on-task (${percentage.toStringAsFixed(1)}%)');
+          } else {
+            summaries.add('$assignmentName: Time sampling data collected');
+          }
           break;
         case 'ratingScale':
           final rating = payload['rating'] as double? ?? 0.0;
           final maxRating = payload['maxRating'] as double? ?? 0.0;
-          summaries.add('${record.assignmentId}: $rating/$maxRating rating');
+          if (maxRating > 0) {
+            summaries.add('$assignmentName: $rating/$maxRating rating');
+          } else {
+            summaries.add('$assignmentName: Rating scale data collected');
+          }
           break;
         case 'abcData':
-          final incidentCount = payload['incidentCount'] as int? ?? 0;
-          summaries.add('${record.assignmentId}: $incidentCount incidents recorded');
+          final incidentCount = payload['incidentCount'] as int? ?? payload['incidents']?.length ?? 0;
+          summaries.add('$assignmentName: $incidentCount behavior incident(s) recorded');
           break;
         default:
-          summaries.add('${record.assignmentId}: Data collected');
+          summaries.add('$assignmentName: Data collected');
       }
     }
     
-    return summaries.join('; ');
+    return summaries.isEmpty ? 'Data was collected during the session' : summaries.join('; ');
   }
 
   /// Generate behaviors summary from session records
@@ -277,48 +413,65 @@ Keep it factual and concise (2–4 sentences). Do not include PHI beyond what is
     return 'Observed behaviors: ${behaviors.join(', ')}';
   }
 
-  /// Generate interventions summary from session records
-  static String _generateInterventionsSummary(List<SessionRecord> records) {
+  /// Generate interventions summary from session records and assignments
+  static String _generateInterventionsSummary(List<SessionRecord> records, List<ProgramAssignment> assignments) {
     final interventions = <String>[];
+    final usedInterventions = <String>{};
     
-    // Add common interventions based on data types
+    // Create map of assignmentId to assignment for reference
+    final assignmentMap = <String, ProgramAssignment>{};
+    for (final assignment in assignments) {
+      if (assignment.id != null) {
+        assignmentMap[assignment.id!] = assignment;
+      }
+    }
+    
+    // Add specific interventions based on data types and assignments
     for (final record in records) {
       final payload = record.payload;
-      final dataType = payload['dataType'] as String?;
+      final dataType = payload['dataType'] as String? ?? payload['data_type'] as String?;
+      final assignment = assignmentMap[record.assignmentId];
+      final assignmentName = assignment?.displayName ?? record.assignmentId;
       
+      String? intervention;
       switch (dataType) {
         case 'percentCorrect':
-          interventions.add('Discrete trial training with prompting');
+          intervention = 'Discrete trial training (DTT) with systematic prompting for $assignmentName';
           break;
         case 'frequency':
-          interventions.add('Differential reinforcement');
+          intervention = 'Differential reinforcement procedures for $assignmentName';
           break;
         case 'duration':
-          interventions.add('Independent activity engagement');
+          intervention = 'Independent activity engagement training for $assignmentName';
           break;
         case 'rate':
-          interventions.add('Communication training');
+          intervention = 'Communication training and functional communication training (FCT)';
           break;
         case 'taskAnalysis':
-          interventions.add('Task analysis with step-by-step instruction');
+          intervention = 'Task analysis with chaining procedures for $assignmentName';
           break;
         case 'timeSampling':
-          interventions.add('On-task behavior reinforcement');
+          intervention = 'On-task behavior reinforcement and attention training';
           break;
         case 'ratingScale':
-          interventions.add('Social skills training');
+          intervention = 'Social skills training and social interaction protocols';
           break;
         case 'abcData':
-          interventions.add('Behavior management strategies');
+          intervention = 'Behavior management strategies and antecedent-based interventions';
           break;
+      }
+      
+      if (intervention != null && !usedInterventions.contains(intervention)) {
+        interventions.add(intervention);
+        usedInterventions.add(intervention);
       }
     }
     
     if (interventions.isEmpty) {
-      return 'Standard ABA interventions implemented';
+      return 'Standard ABA interventions were implemented, including discrete trial training, natural environment teaching, and behavior management strategies as appropriate for each program goal';
     }
     
-    return 'Interventions used: ${interventions.join(', ')}';
+    return interventions.join('; ');
   }
 
   /// Generate plan from session records and assignments
@@ -327,7 +480,6 @@ Keep it factual and concise (2–4 sentences). Do not include PHI beyond what is
     
     for (final record in records) {
       final payload = record.payload;
-      final dataType = payload['dataType'] as String?;
       final percentage = payload['percentage'] as double? ?? 0.0;
       
       if (percentage >= 80) {
@@ -352,6 +504,16 @@ Keep it factual and concise (2–4 sentences). Do not include PHI beyond what is
       return visit.endTs!.difference(visit.startTs).inMinutes;
     }
     return 60; // Default 60 minutes
+  }
+  
+  /// Format DateTime to time string (HH:MM)
+  static String _formatTime(DateTime dateTime) {
+    return '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+  }
+  
+  /// Format DateTime to date string (MM/DD/YYYY)
+  static String _formatDate(DateTime dateTime) {
+    return '${dateTime.month.toString().padLeft(2, '0')}/${dateTime.day.toString().padLeft(2, '0')}/${dateTime.year}';
   }
 }
 

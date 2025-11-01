@@ -80,6 +80,9 @@ class FileMakerService extends ChangeNotifier {
   }
 
   bool get isAuthenticated => _isAuthenticated;
+  
+  // Get current FileMaker token (for token exchange)
+  String? get token => _token;
 
   // Validate existing token without re-authenticating
   Future<bool> validateToken() async {
@@ -159,6 +162,11 @@ class FileMakerService extends ChangeNotifier {
         _token = data['response']['token'];
         _isAuthenticated = true;
         
+        print('✅ FileMaker authentication successful');
+        print('📋 FileMaker token set: ${_token?.substring(0, 20) ?? "null"}...');
+        print('📋 FileMaker token length: ${_token?.length ?? 0}');
+        print('📋 FileMaker token full value: $_token');
+        
         // Set Authorization header for Dio instance
         _dio.options.headers['Authorization'] = 'Bearer $_token';
         
@@ -166,7 +174,9 @@ class FileMakerService extends ChangeNotifier {
         try {
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('filemaker_token', _token!);
+          print('✅ FileMaker token stored in SharedPreferences');
         } catch (e) {
+          print('⚠️ Error storing FileMaker token: $e');
           // Ignore storage errors in web
         }
         
@@ -562,6 +572,7 @@ class FileMakerService extends ChangeNotifier {
   }
 
   /// Update visit notes in FileMaker
+  /// Preserves existing template in visit_notes field and appends generated notes
   Future<void> updateVisitNotes(String visitId, String notes) async {
     await _ensureAuthenticated();
     
@@ -581,9 +592,27 @@ class FileMakerService extends ChangeNotifier {
         if (data.isNotEmpty) {
           final recordId = data[0]['recordId']?.toString();
           if (recordId != null) {
-            // Update the visit with notes
+            // Get existing visit_notes (which contains the template)
+            final fieldData = data[0]['fieldData'] as Map<String, dynamic>? ?? {};
+            final existingNotes = fieldData['visit_notes']?.toString() ?? '';
+            
+            // Combine existing template with new notes
+            // If template exists, append new notes to it; otherwise use new notes as-is
+            String finalNotes;
+            if (existingNotes.trim().isNotEmpty) {
+              // Template exists - append generated notes
+              finalNotes = existingNotes.trim() + '\n\n' + notes.trim();
+            } else {
+              // No template - use generated notes as-is
+              finalNotes = notes.trim();
+            }
+            
+            print('📝 Existing template length: ${existingNotes.length}');
+            print('📝 Final notes length: ${finalNotes.length}');
+            
+            // Update the visit with combined notes
             final updateData = {
-              'notes': notes,
+              'visit_notes': finalNotes,
               'update_flagx': 6, // Custom flag for notes update
             };
             
@@ -869,21 +898,26 @@ class FileMakerService extends ChangeNotifier {
   Future<SessionRecord> updateSessionRecord(SessionRecord record) async {
     await _ensureAuthenticated();
     
-    // Add program times to payload
+    // Add program times to payload (without milliseconds)
     final payloadWithTimes = Map<String, dynamic>.from(record.payload);
     if (record.programStartTime != null) {
-      payloadWithTimes['program_start_time'] = record.programStartTime!.toIso8601String();
+      payloadWithTimes['program_start_time'] = record.programStartTime!.toIso8601String().split('.')[0];
     }
     if (record.programEndTime != null) {
-      payloadWithTimes['program_end_time'] = record.programEndTime!.toIso8601String();
+      payloadWithTimes['program_end_time'] = record.programEndTime!.toIso8601String().split('.')[0];
     }
 
+      final now = DateTime.now();
+      final nowString = now.toIso8601String().split('.')[0];
+      
       final sessionData = {
         'fieldData': {
         'visitId': record.visitId,
           'clientId': record.clientId,
           'assignmentId': record.assignmentId,
-          'startedAt_ts': record.startedAt?.toIso8601String().split('.')[0] ?? DateTime.now().toIso8601String().split('.')[0],
+          'Company': record.company ?? _currentCompanyId ?? '',
+          'startedAt_ts': record.startedAt?.toIso8601String().split('.')[0] ?? nowString,
+          'updatedAt_ts': record.updatedAt?.toIso8601String().split('.')[0] ?? nowString,
         'payload_json': jsonEncode(payloadWithTimes),
           'staffId': record.staffId ?? '',
         'notes': record.notes ?? '',
@@ -922,15 +956,17 @@ class FileMakerService extends ChangeNotifier {
     try {
       print('🔍 Searching for existing record with visitId: $visitId, assignmentId: $assignmentId');
       
+      // Search by visitId only (since assignmentId field might not be searchable)
+      // Then filter by assignmentId in code
       final response = await _dio.post(
         '/databases/$database/layouts/api_sessiondata/_find',
         data: {
           'query': [
             {
               'visitId': '==$visitId',
-              'assignmentId': '==$assignmentId',
             }
-          ]
+          ],
+          'limit': 100  // Get all records for this visit, then filter
         },
         options: Options(
           headers: {
@@ -948,30 +984,40 @@ class FileMakerService extends ChangeNotifier {
         final data = response.data as Map<String, dynamic>;
         final records = data['response']['data'] as List<dynamic>?;
         
-        print('🔍 Found ${records?.length ?? 0} records');
+        print('🔍 Found ${records?.length ?? 0} records for visitId');
         
         if (records != null && records.isNotEmpty) {
-          final recordData = records.first as Map<String, dynamic>;
-          final fieldData = recordData['fieldData'] as Map<String, dynamic>;
-          
-          print('🔍 Found existing record: ${recordData['recordId']}');
-          
-          return SessionRecord(
-            id: recordData['recordId'].toString(),
-            visitId: fieldData['visitId'] ?? '',
-            clientId: fieldData['clientId'] ?? '',
-            assignmentId: fieldData['assignmentId'] ?? '',
-            startedAt: fieldData['startedAt_ts'] != null 
-                ? DateTime.parse(fieldData['startedAt_ts']) 
-                : null,
-            updatedAt: DateTime.now(),
-            payload: fieldData['payload_json'] != null 
-                ? jsonDecode(fieldData['payload_json']) 
-                : {},
-            staffId: fieldData['staffId'],
-            notes: fieldData['notes'],
-            interventionPhase: fieldData['intervention_phase'],
-          );
+          // Filter by assignmentId in code since FileMaker search might not work for that field
+          for (final recordData in records) {
+            final fieldData = recordData['fieldData'] as Map<String, dynamic>;
+            final recordAssignmentId = fieldData['assignmentId']?.toString() ?? '';
+            
+            print('🔍 Checking record ${recordData['recordId']} with assignmentId: "$recordAssignmentId"');
+            
+            if (recordAssignmentId == assignmentId) {
+              print('✅ Found matching record: ${recordData['recordId']}');
+              print('📋 Retrieved assignmentId from FileMaker: "$recordAssignmentId"');
+              
+              return SessionRecord(
+                id: recordData['recordId'].toString(),
+                visitId: fieldData['visitId'] ?? '',
+                clientId: fieldData['clientId'] ?? '',
+                assignmentId: recordAssignmentId,
+                startedAt: fieldData['startedAt_ts'] != null 
+                    ? DateTime.parse(fieldData['startedAt_ts']) 
+                    : null,
+                updatedAt: DateTime.now(),
+                payload: fieldData['payload_json'] != null 
+                    ? jsonDecode(fieldData['payload_json']) 
+                    : {},
+                staffId: fieldData['staffId'],
+                notes: fieldData['notes'],
+                interventionPhase: fieldData['intervention_phase'],
+                company: fieldData['Company']?.toString(),
+              );
+            }
+          }
+          print('⚠️ Found ${records.length} records for visitId but none match assignmentId: $assignmentId');
         }
       }
       
@@ -986,32 +1032,45 @@ class FileMakerService extends ChangeNotifier {
 
   // Create new session record
   Future<SessionRecord> _createSessionRecord(SessionRecord record) async {
-    // Add program times to payload
+    // Add program times to payload (without milliseconds)
     final payloadWithTimes = Map<String, dynamic>.from(record.payload);
     if (record.programStartTime != null) {
-      payloadWithTimes['program_start_time'] = record.programStartTime!.toIso8601String();
+      payloadWithTimes['program_start_time'] = record.programStartTime!.toIso8601String().split('.')[0];
     }
     if (record.programEndTime != null) {
-      payloadWithTimes['program_end_time'] = record.programEndTime!.toIso8601String();
+      payloadWithTimes['program_end_time'] = record.programEndTime!.toIso8601String().split('.')[0];
+    }
+
+    final now = DateTime.now();
+    final nowString = now.toIso8601String().split('.')[0];
+
+    // Build fieldData exactly matching behavior log pattern that works
+    // Store all session-specific data in payload_json (like behavior logs do with behavior data)
+    print('📋 SessionRecord assignmentId value: "${record.assignmentId}" (length: ${record.assignmentId.length})');
+    print('📋 SessionRecord assignmentId isEmpty: ${record.assignmentId.isEmpty}');
+    
+    final fieldData = <String, dynamic>{
+      'visitId': record.visitId,
+      'clientId': record.clientId,
+      'assignmentId': record.assignmentId,
+      'payload_json': jsonEncode(payloadWithTimes),
+      'staffId': record.staffId ?? '',
+      'startedAt_ts': record.startedAt?.toIso8601String().split('.')[0] ?? nowString,
+      'updatedAt_ts': record.updatedAt?.toIso8601String().split('.')[0] ?? nowString,
+    };
+    
+    // Add intervention_phase if provided (only if it has a value to avoid empty string issues)
+    if (record.interventionPhase != null && record.interventionPhase!.isNotEmpty) {
+      fieldData['intervention_phase'] = record.interventionPhase;
     }
 
     final sessionData = {
-      'fieldData': {
-        'visitId': record.visitId,
-        'clientId': record.clientId,
-        'assignmentId': record.assignmentId,
-        'startedAt_ts': record.startedAt?.toIso8601String().split('.')[0] ?? DateTime.now().toIso8601String().split('.')[0],
-        'payload_json': jsonEncode(payloadWithTimes),
-        'staffId': record.staffId ?? '',
-        'notes': record.notes ?? '',
-        'intervention_phase': record.interventionPhase ?? 'baseline',
-        'program_start_time': record.programStartTime?.toIso8601String().split('.')[0],
-        'program_end_time': record.programEndTime?.toIso8601String().split('.')[0],
-      }
+      'fieldData': fieldData,
     };
     
     print('🔍 Creating session record with data: ${jsonEncode(sessionData)}');
-      
+    
+    try {
       final createResponse = await _dio.post(
         '/databases/$database/layouts/api_sessiondata/records',
         data: sessionData,
@@ -1028,12 +1087,45 @@ class FileMakerService extends ChangeNotifier {
       if (createResponse.statusCode == 200 || createResponse.statusCode == 201) {
         final data = createResponse.data as Map<String, dynamic>;
         final recordId = data['response']['recordId'];
+        print('✅ Successfully created session record: $recordId');
+        
+        // Verify what FileMaker actually saved by fetching the record back
+        print('🔍 Verifying saved assignmentId by fetching record...');
+        try {
+          final verifyResponse = await _dio.get(
+            '/databases/$database/layouts/api_sessiondata/records/$recordId',
+            options: Options(
+              headers: {
+                'Authorization': 'Bearer $_token',
+                'Accept': 'application/json',
+              },
+            ),
+          );
+          
+          if (verifyResponse.statusCode == 200) {
+            final verifyData = verifyResponse.data['response']['data'][0]['fieldData'] as Map<String, dynamic>;
+            print('📋 FileMaker saved assignmentId: "${verifyData['assignmentId']}"');
+            print('📋 Expected assignmentId: "${record.assignmentId}"');
+            print('📋 assignmentId match: ${verifyData['assignmentId'] == record.assignmentId}');
+          }
+        } catch (e) {
+          print('⚠️ Could not verify saved assignmentId: $e');
+        }
+        
         return record.copyWith(id: recordId.toString());
       }
       
-    print('❌ Failed to create session record: ${createResponse.statusCode}');
-    print('❌ Response data: ${createResponse.data}');
-    throw Exception('Failed to create session record: ${createResponse.statusCode} - ${createResponse.data}');
+      print('❌ Failed to create session record: ${createResponse.statusCode}');
+      print('❌ Response data: ${createResponse.data}');
+      throw Exception('Failed to create session record: ${createResponse.statusCode} - ${createResponse.data}');
+    } on DioException catch (e) {
+      print('❌ DioException when creating session record:');
+      print('   Status Code: ${e.response?.statusCode}');
+      print('   Response: ${e.response?.data}');
+      print('   Request Data: ${jsonEncode(sessionData)}');
+      print('   Error: ${e.message}');
+      rethrow;
+    }
   }
 
   // Update existing session record
@@ -1066,45 +1158,70 @@ class FileMakerService extends ChangeNotifier {
     
     // Add program times to payload
     if (record.programStartTime != null) {
-      payloadWithTimes['program_start_time'] = record.programStartTime!.toIso8601String();
+      payloadWithTimes['program_start_time'] = record.programStartTime!.toIso8601String().split('.')[0];
     }
     if (record.programEndTime != null) {
-      payloadWithTimes['program_end_time'] = record.programEndTime!.toIso8601String();
+      payloadWithTimes['program_end_time'] = record.programEndTime!.toIso8601String().split('.')[0];
+    }
+
+    final now = DateTime.now();
+    final nowString = now.toIso8601String().split('.')[0];
+
+    // Build fieldData exactly matching the create pattern that works
+    print('📋 Update SessionRecord assignmentId value: "${record.assignmentId}" (length: ${record.assignmentId.length})');
+    print('📋 Update SessionRecord assignmentId isEmpty: ${record.assignmentId.isEmpty}');
+    
+    final fieldData = <String, dynamic>{
+      'visitId': record.visitId,
+      'clientId': record.clientId,
+      'assignmentId': record.assignmentId,
+      'payload_json': jsonEncode(payloadWithTimes),
+      'staffId': record.staffId ?? '',
+      'startedAt_ts': record.startedAt?.toIso8601String().split('.')[0] ?? nowString,
+      'updatedAt_ts': record.updatedAt?.toIso8601String().split('.')[0] ?? nowString,
+    };
+    
+    // Add intervention_phase if provided (only if it has a value to avoid empty string issues)
+    if (record.interventionPhase != null && record.interventionPhase!.isNotEmpty) {
+      fieldData['intervention_phase'] = record.interventionPhase;
     }
 
     final sessionData = {
-      'fieldData': {
-        'visitId': record.visitId,
-        'clientId': record.clientId,
-        'assignmentId': record.assignmentId,
-        'startedAt_ts': record.startedAt?.toIso8601String().split('.')[0] ?? DateTime.now().toIso8601String().split('.')[0],
-        'payload_json': jsonEncode(payloadWithTimes),
-        'staffId': record.staffId ?? '',
-        'notes': record.notes ?? '',
-        'intervention_phase': record.interventionPhase ?? 'baseline',
-        'program_start_time': record.programStartTime?.toIso8601String().split('.')[0],
-        'program_end_time': record.programEndTime?.toIso8601String().split('.')[0],
-      }
+      'fieldData': fieldData,
     };
     
-    final updateResponse = await _dio.patch(
-      '/databases/$database/layouts/api_sessiondata/records/$recordId',
-      data: sessionData,
-      options: Options(
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $_token',
-          'Accept': 'application/json',
-          'Cache-Control': 'no-cache',
-        },
-      ),
-    );
-
-    if (updateResponse.statusCode == 200) {
-      return record.copyWith(id: recordId);
-    }
+    print('🔍 Updating session record $recordId with data: ${jsonEncode(sessionData)}');
     
-    throw Exception('Failed to update session record: ${updateResponse.statusCode}');
+    try {
+      final updateResponse = await _dio.patch(
+        '/databases/$database/layouts/api_sessiondata/records/$recordId',
+        data: sessionData,
+        options: Options(
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $_token',
+            'Accept': 'application/json',
+            'Cache-Control': 'no-cache',
+          },
+        ),
+      );
+
+      if (updateResponse.statusCode == 200) {
+        print('✅ Successfully updated session record: $recordId');
+        return record.copyWith(id: recordId);
+      }
+      
+      print('❌ Failed to update session record: ${updateResponse.statusCode}');
+      print('❌ Response data: ${updateResponse.data}');
+      throw Exception('Failed to update session record: ${updateResponse.statusCode} - ${updateResponse.data}');
+    } on DioException catch (e) {
+      print('❌ DioException when updating session record:');
+      print('   Status Code: ${e.response?.statusCode}');
+      print('   Response: ${e.response?.data}');
+      print('   Request Data: ${jsonEncode(sessionData)}');
+      print('   Error: ${e.message}');
+      rethrow;
+    }
   }
 
   // Get all session records for a specific visit
@@ -1170,6 +1287,7 @@ class FileMakerService extends ChangeNotifier {
                 ? DateTime.parse(fieldData['program_end_time'] as String)
                 : null,
             notes: fieldData['notes'] as String?,
+            company: fieldData['Company'] as String?,
           );
         }).toList();
 
@@ -1322,16 +1440,12 @@ class FileMakerService extends ChangeNotifier {
       final fieldData = <String, dynamic>{
         'visitId': log.visitId,
         'clientId': log.clientId,
+        'assignmentId': log.assignmentId ?? '', // Always include assignmentId
         'payload_json': jsonEncode(behaviorPayload), // Convert to JSON string
         'staffId': '17ED033A-7CA9-4367-AA48-3C459DBBC24C', // Default staff ID
         'startedAt_ts': log.createdAt.toIso8601String().split('.')[0], // Complete timestamp without milliseconds
         'updatedAt_ts': log.updatedAt.toIso8601String().split('.')[0], // Complete timestamp without milliseconds
       };
-      
-      // Only add assignmentId if it's not null and not empty
-      if (log.assignmentId != null && log.assignmentId!.isNotEmpty) {
-        fieldData['assignmentId'] = log.assignmentId!;
-      }
       
       // Notes are already included in payload_json, no need to duplicate
       
@@ -1562,6 +1676,7 @@ class FileMakerService extends ChangeNotifier {
               'time_out': timeOut,
               'Patient_name': fieldData['Patient_name']?.toString(),
               'assignedto_name': fieldData['assignedto_name']?.toString(),
+              'staff_title': fieldData['staff_title']?.toString(),
             };
             
             
@@ -1643,6 +1758,178 @@ class FileMakerService extends ChangeNotifier {
       }
     } catch (e) {
       rethrow;
+    }
+  }
+
+  /// Get a visit by ID from FileMaker
+  Future<Visit?> getVisitById(String visitId) async {
+    await _ensureAuthenticated();
+    
+    try {
+      final response = await _dio.post(
+        '/databases/$database/layouts/api_appointments/_find',
+        data: {
+          'query': [
+            {'PrimaryKey': '==$visitId'}
+          ],
+          'limit': 1
+        },
+        options: Options(
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $_token',
+            'Accept': 'application/json',
+          },
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final data = response.data as Map<String, dynamic>;
+        final records = data['response']['data'] as List<dynamic>? ?? [];
+        
+        if (records.isNotEmpty) {
+          final record = records.first;
+          final fieldData = record['fieldData'] as Map<String, dynamic>;
+          
+          // Debug: Print what we're getting from FileMaker
+          print('🔍 getVisitById - fieldData keys: ${fieldData.keys.toList()}');
+          print('🔍 getVisitById - start_ts type: ${fieldData['start_ts']?.runtimeType}, value: ${fieldData['start_ts']}');
+          print('🔍 getVisitById - end_ts type: ${fieldData['end_ts']?.runtimeType}, value: ${fieldData['end_ts']}');
+          print('🔍 getVisitById - assignedto_name: ${fieldData['assignedto_name']}');
+          print('🔍 getVisitById - staff_title: ${fieldData['staff_title']}');
+          
+          // Parse appointment date and times
+          final appointmentDate = fieldData['Appointment_date']?.toString();
+          final timeIn = fieldData['time_in']?.toString();
+          final timeOut = fieldData['time_out']?.toString();
+          
+          // Parse start_ts - try multiple formats
+          String? startTs;
+          if (fieldData['start_ts'] != null) {
+            try {
+              final startTsValue = fieldData['start_ts'];
+              if (startTsValue is String) {
+                // Try to parse and validate the date
+                final parsed = DateTime.parse(startTsValue);
+                startTs = parsed.toIso8601String();
+              } else {
+                startTs = startTsValue.toString();
+              }
+            } catch (e) {
+              print('⚠️ Error parsing start_ts: $e');
+              // Try creating from appointment_date + time_in
+              if (appointmentDate != null && appointmentDate.isNotEmpty &&
+                  timeIn != null && timeIn.isNotEmpty) {
+                try {
+                  final dateParts = appointmentDate.split('/');
+                  final timeParts = timeIn.split(':');
+                  if (dateParts.length == 3 && timeParts.length >= 2) {
+                    final startDateTime = DateTime(
+                      int.parse(dateParts[2]), // year
+                      int.parse(dateParts[0]), // month
+                      int.parse(dateParts[1]), // day
+                      int.parse(timeParts[0]), // hour
+                      int.parse(timeParts[1]), // minute
+                    );
+                    startTs = startDateTime.toIso8601String();
+                  }
+                } catch (e2) {
+                  print('⚠️ Error creating start_ts from appointment_date: $e2');
+                }
+              }
+            }
+          } else if (appointmentDate != null && appointmentDate.isNotEmpty &&
+              timeIn != null && timeIn.isNotEmpty) {
+            // Create start_ts from appointment_date + time_in
+            try {
+              final dateParts = appointmentDate.split('/');
+              final timeParts = timeIn.split(':');
+              if (dateParts.length == 3 && timeParts.length >= 2) {
+                final startDateTime = DateTime(
+                  int.parse(dateParts[2]), // year
+                  int.parse(dateParts[0]), // month
+                  int.parse(dateParts[1]), // day
+                  int.parse(timeParts[0]), // hour
+                  int.parse(timeParts[1]), // minute
+                );
+                startTs = startDateTime.toIso8601String();
+              }
+            } catch (e) {
+              print('⚠️ Error creating start_ts from appointment_date: $e');
+            }
+          }
+          
+          // Parse end_ts from time_out and appointment_date
+          String? endTs;
+          final endTsValue = fieldData['end_ts'];
+          if (endTsValue != null && endTsValue.toString().trim().isNotEmpty) {
+            try {
+              // Try to parse and validate the date
+              final parsed = DateTime.parse(endTsValue.toString());
+              endTs = parsed.toIso8601String();
+            } catch (e) {
+              print('⚠️ Error parsing end_ts: $e');
+              // If parsing fails, use current time
+              endTs = DateTime.now().toIso8601String();
+            }
+          } else {
+            // If end_ts is empty or null, try creating from appointment_date + time_out first
+            if (appointmentDate != null && appointmentDate.isNotEmpty &&
+                timeOut != null && timeOut.isNotEmpty) {
+              try {
+                final dateParts = appointmentDate.split('/');
+                final timeParts = timeOut.split(':');
+                if (dateParts.length == 3 && timeParts.length >= 2) {
+                  final endDateTime = DateTime(
+                    int.parse(dateParts[2]), // year
+                    int.parse(dateParts[0]), // month
+                    int.parse(dateParts[1]), // day
+                    int.parse(timeParts[0]), // hour
+                    int.parse(timeParts[1]), // minute
+                  );
+                  endTs = endDateTime.toIso8601String();
+                } else {
+                  // Fallback to current time if parsing fails
+                  endTs = DateTime.now().toIso8601String();
+                }
+              } catch (e) {
+                print('⚠️ Error creating end_ts from appointment_date: $e');
+                // Fallback to current time
+                endTs = DateTime.now().toIso8601String();
+              }
+            } else {
+              // If no appointment_date/time_out, use current time in same format as start_ts
+              endTs = DateTime.now().toIso8601String();
+            }
+          }
+          
+          final processedData = <String, dynamic>{
+            'id': fieldData['PrimaryKey']?.toString() ?? '',
+            'clientId': fieldData['clientId']?.toString() ?? '',
+            'staffId': fieldData['staffId']?.toString() ?? '',
+            'Procedure_Input': fieldData['Procedure_Input']?.toString() ?? 'Intervention (97153)',
+            'start_ts': startTs ?? DateTime.now().toIso8601String(),
+            'end_ts': endTs,
+            'statusInput': fieldData['statusInput']?.toString() ?? 'Planned',
+            'billableMinutes_n': fieldData['billableMinutes_n'],
+            'units_total': fieldData['units_total'],
+            'notes': fieldData['visit_notes']?.toString(),
+            'Appointment_date': appointmentDate,
+            'time_in': timeIn,
+            'time_out': timeOut,
+            'Patient_name': fieldData['Patient_name']?.toString(),
+            'assignedto_name': fieldData['assignedto_name']?.toString(),
+            'staff_title': fieldData['staff_title']?.toString(),
+          };
+          
+          return Visit.fromJson(processedData);
+        }
+      }
+      
+      return null;
+    } catch (e) {
+      print('❌ Error fetching visit by ID: $e');
+      return null;
     }
   }
 

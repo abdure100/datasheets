@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import '../services/filemaker_service.dart';
+import '../services/auth_service.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -19,7 +21,11 @@ class _LoginPageState extends State<LoginPage> {
   @override
   void initState() {
     super.initState();
-    // Initialize with empty fields for production
+    // Prefill test user credentials for development/testing only
+    if (kDebugMode) {
+      _usernameController.text = 'nafisa@test.com';
+      _passwordController.text = 'Welcome123\$';
+    }
   }
 
   @override
@@ -41,10 +47,13 @@ class _LoginPageState extends State<LoginPage> {
       
       final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
       
-      // First authenticate with FileMaker to get access
+      // Step 1: Authenticate with FileMaker to get access
       await fileMakerService.authenticate();
       
-      // Then validate user credentials against staff table
+      // Small delay to ensure token is fully set
+      await Future.delayed(const Duration(milliseconds: 100));
+      
+      // Step 2: Validate user credentials against staff table
       final staff = await fileMakerService.getStaffByEmail(email);
       
       if (staff == null) {
@@ -61,9 +70,50 @@ class _LoginPageState extends State<LoginPage> {
         throw Exception('Account is inactive');
       }
       
+      // Step 3: Exchange FileMaker token for Sanctum token (no re-authentication needed)
+      print('🔍 LOGIN DEBUG: Starting Step 3 - Token Exchange');
+      try {
+        // Get the FileMaker token that was just obtained
+        final fileMakerToken = fileMakerService.token;
+        print('🔍 LOGIN DEBUG: FileMaker token retrieved');
+        print('🔍 LOGIN DEBUG: Token is null: ${fileMakerToken == null}');
+        print('🔍 LOGIN DEBUG: Token isEmpty: ${fileMakerToken?.isEmpty ?? true}');
+        if (fileMakerToken != null) {
+          print('🔍 LOGIN DEBUG: Token length: ${fileMakerToken.length}');
+          print('🔍 LOGIN DEBUG: Token preview: ${fileMakerToken.substring(0, fileMakerToken.length > 20 ? 20 : fileMakerToken.length)}...');
+        }
+        
+        if (fileMakerToken != null && fileMakerToken.isNotEmpty) {
+          print('🔐 Exchanging FileMaker token for Sanctum token...');
+          print('🔍 LOGIN DEBUG: Calling AuthService.exchangeFileMakerToken');
+          final sanctumToken = await AuthService.exchangeFileMakerToken(
+            filemakerToken: fileMakerToken,
+            email: email,
+            database: 'EIDBI',
+          );
+          
+          print('🔍 LOGIN DEBUG: Exchange completed, sanctumToken is null: ${sanctumToken == null}');
+          
+          if (sanctumToken != null) {
+            print('✅ Sanctum token obtained via FileMaker token exchange');
+            print('🔍 LOGIN DEBUG: Sanctum token length: ${sanctumToken.length}');
+          } else {
+            print('⚠️ Sanctum token not received, but continuing with FileMaker auth');
+            // Continue anyway - MCP features will fall back to direct API
+          }
+        } else {
+          print('⚠️ No FileMaker token available for exchange');
+          print('🔍 LOGIN DEBUG: Token was null or empty, cannot exchange');
+        }
+      } catch (e, stackTrace) {
+        print('⚠️ Failed to exchange FileMaker token for Sanctum token: $e');
+        print('🔍 LOGIN DEBUG: Exception stack trace: $stackTrace');
+        print('⚠️ Continuing with FileMaker auth only - MCP features will use fallback');
+        // Don't block login if Sanctum auth fails - user can still use the app
+      }
+      print('🔍 LOGIN DEBUG: Step 3 completed');
       
-      // Display session variables
-      
+      // Step 4: Navigate to start visit page
       if (mounted) {
         Navigator.pushReplacementNamed(context, '/start-visit');
       }
@@ -195,6 +245,15 @@ class _LoginPageState extends State<LoginPage> {
                                   'Login',
                                   style: TextStyle(fontSize: 16),
                                 ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextButton.icon(
+                        onPressed: () => Navigator.pushNamed(context, '/mcp-test'),
+                        icon: const Icon(Icons.science, size: 18),
+                        label: const Text('MCP API Test'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.grey[600],
                         ),
                       ),
                       const SizedBox(height: 16),

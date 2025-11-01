@@ -4,13 +4,11 @@ import 'dart:async';
 import '../models/visit.dart';
 import '../models/client.dart';
 import '../models/session_record.dart';
-import '../models/program_assignment.dart';
 import '../services/filemaker_service.dart';
 import '../services/note_drafting_service.dart';
 import '../providers/session_provider.dart';
 import '../widgets/program_card.dart';
 import '../widgets/behavior_board.dart';
-import '../widgets/note_drafting_widget.dart';
 
 class SessionWithNotesPage extends StatefulWidget {
   final Visit? visit;
@@ -67,28 +65,56 @@ class _SessionWithNotesPageState extends State<SessionWithNotesPage> {
     });
 
     try {
+      final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
+      
+      // Fetch fresh visit record from FileMaker to get latest assignedto_name
+      print('🔄 Fetching fresh visit record from FileMaker...');
+      final freshVisit = await fileMakerService.getVisitById(widget.visit!.id);
+      final visit = freshVisit ?? widget.visit!;
+      
+      if (freshVisit != null) {
+        print('✅ Fetched fresh visit record with assignedto_name: ${freshVisit.staffName}');
+      } else {
+        print('⚠️ Could not fetch fresh visit, using existing visit record');
+      }
+      
       // Get session records from the provider
       final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
       final sessionRecords = sessionProvider.sessionRecords;
       
       // Get program assignments
-      final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
       final assignments = await fileMakerService.getProgramAssignments(widget.client!.id);
 
+      // Get staff name from assignedto_name - use currentStaffName only if assignedto_name is null/empty
+      final staffName = visit.staffName?.isNotEmpty == true 
+          ? visit.staffName! 
+          : (fileMakerService.currentStaffName ?? 'Provider');
+      final staffTitle = visit.staffTitle?.isNotEmpty == true 
+          ? visit.staffTitle! 
+          : 'BCBA'; // Use staff_title from visit, fallback to BCBA
+      final providerName = staffTitle.isNotEmpty 
+          ? '$staffName, $staffTitle' 
+          : staffName;
+      final npi = 'ATYPICAL'; // TODO: Get NPI from FileMaker when field is available
+      
+      print('👤 Provider info from visit: assignedto_name="${visit.staffName}", staff_title="${visit.staffTitle}"');
+      print('👤 Provider info final: name=$staffName, title=$staffTitle, providerName=$providerName');
+      
       // Convert to SessionData
       final sessionData = NoteDraftingService.convertSessionRecordsToSessionData(
-        visit: widget.visit!,
+        visit: visit,
         client: widget.client!,
         sessionRecords: sessionRecords,
         assignments: assignments,
-        providerName: 'Jane Doe, BCBA', // You can get this from staff data
-        npi: 'ATYPICAL', // You can get this from staff data
+        providerName: providerName,
+        npi: npi,
       );
 
-      // Generate note
+      // Generate note with MCP context
       final noteDraft = await NoteDraftingService.generateNoteDraft(
         session: sessionData,
         ragContext: 'Use SOAP tone; focus on measurable outcomes and data-driven observations.',
+        visitId: widget.visit?.id,
       );
 
       setState(() {
@@ -153,7 +179,56 @@ class _SessionWithNotesPageState extends State<SessionWithNotesPage> {
     }
   }
 
-  Future<void> _endVisit() async {
+  /// Handle end session button click - checks for unsaved data first
+  Future<void> _handleEndSession() async {
+    if (_isEnding || widget.visit == null) return;
+    
+    // Check for unsaved data first
+    final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
+    final activeAssignments = await fileMakerService.getProgramAssignments(widget.client!.id);
+    final totalAssignments = activeAssignments.length;
+    final savedAssignments = _savedAssignments.length;
+    
+    if (savedAssignments < totalAssignments) {
+      // Show warning about unsaved data
+      final result = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: const Text('Warning: Data Will Be Lost'),
+            content: Text(
+              'You have $savedAssignments of $totalAssignments programs saved.\n\n'
+              'Your unsaved data will be lost if you end the session now.\n\n'
+              'Do you want to proceed?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('No', style: TextStyle(color: Colors.grey)),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Yes', style: TextStyle(color: Colors.red)),
+              ),
+            ],
+          );
+        },
+      );
+      
+      if (result != true) {
+        // User cancelled
+        return;
+      }
+      // User confirmed, proceed with ending (skip duplicate check)
+      await _endVisit(skipUnsavedDataCheck: true);
+      return;
+    }
+    
+    // No unsaved data, proceed directly to end visit (skip duplicate check)
+    await _endVisit(skipUnsavedDataCheck: true);
+  }
+
+  Future<void> _endVisit({bool skipUnsavedDataCheck = false}) async {
     if (_isEnding || widget.visit == null) return;
     
     setState(() => _isEnding = true);
@@ -162,17 +237,23 @@ class _SessionWithNotesPageState extends State<SessionWithNotesPage> {
       final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
       final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
       
-      // Check if all assignments are saved
-      final activeAssignments = await fileMakerService.getProgramAssignments(widget.client!.id);
-      final totalAssignments = activeAssignments.length;
-      final savedAssignments = _savedAssignments.length;
-      
-      if (savedAssignments < totalAssignments) {
-        // Not all assignments are saved, show dialog
-        await _showSaveUnsavedDataDialog();
+      // Check if all assignments are saved (unless check was already done)
+      if (!skipUnsavedDataCheck) {
+        final activeAssignments = await fileMakerService.getProgramAssignments(widget.client!.id);
+        final totalAssignments = activeAssignments.length;
+        final savedAssignments = _savedAssignments.length;
+        
+        if (savedAssignments < totalAssignments) {
+          // Not all assignments are saved, show dialog
+          await _showSaveUnsavedDataDialog();
+          setState(() => _isEnding = false);
+          return;
+        } else {
+          // All assignments are saved, proceed to end session
+          print('✅ All assignments saved, ending session directly');
+        }
       } else {
-        // All assignments are saved, proceed to end session
-        print('✅ All assignments saved, ending session directly');
+        print('✅ Skipping unsaved data check - proceeding to end session');
       }
       
       print('🛑 Ending session for visit: ${widget.visit!.id}');
@@ -284,44 +365,44 @@ class _SessionWithNotesPageState extends State<SessionWithNotesPage> {
     final totalAssignments = activeAssignments.length;
     final savedAssignments = _savedAssignments.length;
     
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Save Unsaved Data'),
-          content: Text(
-            'You have $savedAssignments of $totalAssignments programs saved.\n\nDo you have any unsaved program data that you would like to save before ending the session?\n\nIf you choose "Yes, Save Data", please use the "Save Data" button on each program card to save your data.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('No, End Session'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Yes, Save Data'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (result == true) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+    // Check if there's unsaved data
+    if (savedAssignments < totalAssignments) {
+      // Show warning dialog about data loss
+      final result = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: const Text('Warning: Data Will Be Lost'),
             content: Text(
-              'Please save your program data using the "Save Data" button on each program card, then try ending the session again.',
+              'You have $savedAssignments of $totalAssignments programs saved.\n\n'
+              'Your unsaved data will be lost if you end the session now.\n\n'
+              'Do you want to proceed?',
             ),
-            backgroundColor: Colors.orange,
-            duration: Duration(seconds: 5),
-          ),
-        );
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('No', style: TextStyle(color: Colors.grey)),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Yes, Discard and Close', style: TextStyle(color: Colors.red)),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (result == true) {
+        // User confirmed, proceed to end session without saving
+        // Continue with ending session
+        return;
+      } else {
+        // User cancelled, don't end session
+        setState(() => _isEnding = false);
+        return;
       }
-      
-      setState(() => _isEnding = false);
-      return;
     }
+    // All assignments are saved, no need to show dialog
   }
 
   void _logout() {
@@ -435,6 +516,53 @@ class _SessionWithNotesPageState extends State<SessionWithNotesPage> {
                   
                   const SizedBox(height: 16),
                   
+                  // Generate Notes and End Session buttons in same row
+                  Row(
+                    children: [
+                      // Generate Notes Button
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _isGeneratingNotes ? null : _generateNotes,
+                          icon: _isGeneratingNotes 
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.auto_awesome),
+                          label: Text(_isGeneratingNotes ? 'Generating...' : 'Generate Notes'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      // End Session Button
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _isEnding ? null : _handleEndSession,
+                          icon: _isEnding 
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.stop_circle),
+                          label: Text(_isEnding ? 'Ending...' : 'End Session'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  
                   // Notes Section
                   if (_showNotes) ...[
                     Card(
@@ -490,7 +618,14 @@ class _SessionWithNotesPageState extends State<SessionWithNotesPage> {
                   ],
                   
                   // Behavior Board
-                  const BehaviorBoard(),
+                  BehaviorBoard(
+                    visitId: widget.visit!.id,
+                    clientId: widget.client!.id,
+                    assignmentId: null, // General behavior logging
+                    onBehaviorLogged: (log) {
+                      sessionProvider.addBehaviorLog(log);
+                    },
+                  ),
                   
                   const SizedBox(height: 16),
                   
@@ -524,6 +659,12 @@ class _SessionWithNotesPageState extends State<SessionWithNotesPage> {
                                 programEndTime = DateTime.parse(payload['programEndTime']);
                               }
 
+                              print('📋 Assignment details:');
+                              print('   - Assignment ID: "${assignment.id}"');
+                              print('   - Assignment name: "${assignment.name}"');
+                              print('   - Assignment.id is null: ${assignment.id == null}');
+                              print('   - Using assignmentId: "${assignment.id ?? ''}"');
+                              
                               final sessionRecord = SessionRecord(
                                 id: '', // Will be set by FileMaker
                                 visitId: widget.visit!.id,
@@ -555,11 +696,28 @@ class _SessionWithNotesPageState extends State<SessionWithNotesPage> {
                                 );
                               }
                             } catch (e) {
+                              print('❌ Error saving data for ${assignment.name}: $e');
+                              print('📋 Payload data: $payload');
+                              
+                              String errorMessage = 'Failed to save data';
+                              if (e.toString().contains('500')) {
+                                errorMessage = 'Server error. Please check your connection and try again.';
+                              } else if (e.toString().contains('400')) {
+                                errorMessage = 'Invalid data. Please check your entries.';
+                              } else if (e.toString().contains('401') || e.toString().contains('403')) {
+                                errorMessage = 'Authentication error. Please log out and log back in.';
+                              } else if (e.toString().contains('network') || e.toString().contains('timeout')) {
+                                errorMessage = 'Network error. Please check your internet connection.';
+                              } else {
+                                errorMessage = 'Failed to save data. Please try again.';
+                              }
+                              
                               if (mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                    content: Text('Error saving data: $e'),
+                                    content: Text(errorMessage),
                                     backgroundColor: Colors.red,
+                                    duration: const Duration(seconds: 5),
                                   ),
                                 );
                               }
@@ -569,29 +727,6 @@ class _SessionWithNotesPageState extends State<SessionWithNotesPage> {
                       );
                     }),
                   ],
-                  
-                  const SizedBox(height: 16),
-                  
-                  // Generate Notes Button
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _isGeneratingNotes ? null : _generateNotes,
-                      icon: _isGeneratingNotes 
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.auto_awesome),
-                      label: Text(_isGeneratingNotes ? 'Generating Notes...' : 'Generate Notes'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                      ),
-                    ),
-                  ),
                 ],
               ),
             );

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/client.dart';
 import '../models/visit.dart';
 import '../services/filemaker_service.dart';
+import '../services/auth_service.dart';
 import '../providers/session_provider.dart';
 
 class StartVisitPage extends StatefulWidget {
@@ -323,6 +324,12 @@ class _StartVisitPageState extends State<StartVisitPage> {
           onPressed: () => _showLogoutDialog(),
         ),
         actions: [
+          // MCP Test Button
+          IconButton(
+            onPressed: () => Navigator.pushNamed(context, '/mcp-test'),
+            icon: const Icon(Icons.science),
+            tooltip: 'Test MCP API',
+          ),
           // Behaviors Button
           IconButton(
             onPressed: () => Navigator.pushNamed(context, '/behaviors'),
@@ -581,8 +588,11 @@ class _StartVisitPageState extends State<StartVisitPage> {
       // Clear any stored session data
       final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
       
-      // Logout from backend if needed
+      // Logout from FileMaker backend
       await fileMakerService.logout();
+      
+      // Logout from Laravel backend (revoke Sanctum token)
+      await AuthService.logout();
       
       // Navigate back to login page
       if (mounted) {

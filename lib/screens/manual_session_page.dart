@@ -225,22 +225,48 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
     try {
       final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
       
+      // Fetch fresh visit record from FileMaker to get latest assignedto_name
+      print('🔄 Fetching fresh visit record from FileMaker...');
+      final freshVisit = await fileMakerService.getVisitById(_createdVisit!.id);
+      final visit = freshVisit ?? _createdVisit!;
+      
+      if (freshVisit != null) {
+        print('✅ Fetched fresh visit record with assignedto_name: ${freshVisit.staffName}');
+      } else {
+        print('⚠️ Could not fetch fresh visit, using existing visit record');
+      }
+      
       // Fetch fresh session data from FileMaker
       print('🔄 Fetching fresh session data from FileMaker...');
-      final sessionRecords = await fileMakerService.getSessionRecordsForVisit(_createdVisit!.id);
+      final sessionRecords = await fileMakerService.getSessionRecordsForVisit(visit.id);
       print('✅ Fetched ${sessionRecords.length} session records from FileMaker');
       
       // Get program assignments (already loaded)
       final assignments = _assignments;
 
+      // Get staff name from assignedto_name - use currentStaffName only if assignedto_name is null/empty
+      final staffName = visit.staffName?.isNotEmpty == true 
+          ? visit.staffName! 
+          : (fileMakerService.currentStaffName ?? 'Provider');
+      final staffTitle = visit.staffTitle?.isNotEmpty == true 
+          ? visit.staffTitle! 
+          : 'BCBA'; // Use staff_title from visit, fallback to BCBA
+      final providerName = staffTitle.isNotEmpty 
+          ? '$staffName, $staffTitle' 
+          : staffName;
+      final npi = 'ATYPICAL'; // TODO: Get NPI from FileMaker when field is available
+      
+      print('👤 Provider info from visit: assignedto_name="${visit.staffName}", staff_title="${visit.staffTitle}"');
+      print('👤 Provider info final: name=$staffName, title=$staffTitle, providerName=$providerName');
+      
       // Convert to SessionData
       final sessionData = NoteDraftingService.convertSessionRecordsToSessionData(
-        visit: _createdVisit!,
+        visit: visit,
         client: _client,
         sessionRecords: sessionRecords,
         assignments: assignments,
-        providerName: 'Jane Doe, BCBA', // You can get this from staff data
-        npi: 'ATYPICAL', // You can get this from staff data
+        providerName: providerName,
+        npi: npi,
       );
 
       print('🔄 Sending session data to LLM for note generation...');
@@ -250,10 +276,11 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
       print('  - Session Records: ${sessionRecords.length}');
       print('  - Assignments: ${assignments.length}');
       
-      // Generate note
+      // Generate note with MCP context
       final noteDraft = await NoteDraftingService.generateNoteDraft(
         session: sessionData,
         ragContext: 'Use SOAP tone; focus on measurable outcomes and data-driven observations.',
+        visitId: _createdVisit?.id,
       );
 
       setState(() {

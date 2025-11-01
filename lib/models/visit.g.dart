@@ -23,6 +23,7 @@ Visit _$VisitFromJson(Map<String, dynamic> json) => Visit(
       timeIn: json['time_in'] as String?,
       clientName: json['Patient_name'] as String?,
       staffName: json['assignedto_name'] as String?,
+      staffTitle: json['staff_title'] as String?,
       submitterIPAddress: json['submitterIPAddress'] as String?,
     );
 
