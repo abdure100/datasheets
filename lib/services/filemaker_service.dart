@@ -23,6 +23,11 @@ class FileMakerService extends ChangeNotifier {
   String? _token;
   bool _isAuthenticated = false;
   late Dio _dio;
+  DateTime? _tokenCreatedAt; // Track when token was created
+  
+  // Token expiration: FileMaker sessions expire after 15 minutes of inactivity
+  // We'll proactively refresh after 14 minutes to avoid expiration
+  static const Duration _tokenRefreshThreshold = Duration(minutes: 14);
   
   // Session global variables
   String? _currentStaffId;
@@ -45,15 +50,29 @@ class FileMakerService extends ChangeNotifier {
     _dio.interceptors.add(InterceptorsWrapper(
       onError: (error, handler) async {
         if (error.response?.statusCode == 401) {
-          // Token expired, try to refresh
-          print('🔄 Token expired, attempting to refresh...');
+          // Token expired, invalidate and refresh
+          print('🔄 401 Unauthorized - Token expired, attempting to refresh...');
+          
+          // Invalidate the expired token first
+          _invalidateToken();
+          
           try {
             final refreshed = await authenticate();
             if (refreshed) {
-              print('✅ Token refreshed successfully');
+              print('✅ Token refreshed successfully, retrying request...');
+              
               // Retry the original request with new token
               final options = error.requestOptions;
               options.headers['Authorization'] = 'Bearer $_token';
+              
+              // Prevent infinite loops by tracking retry attempts
+              final retryCount = options.extra['retryCount'] ?? 0;
+              if (retryCount >= 1) {
+                print('❌ Max retries reached, giving up');
+                handler.next(error);
+                return;
+              }
+              options.extra['retryCount'] = retryCount + 1;
               
               try {
                 final response = await _dio.fetch(options);
@@ -61,10 +80,22 @@ class FileMakerService extends ChangeNotifier {
                 return;
               } catch (retryError) {
                 print('❌ Retry failed: $retryError');
+                // Convert any error to DioException for handler
+                if (retryError is DioException) {
+                  handler.next(retryError);
+                } else {
+                  handler.next(DioException(
+                    requestOptions: options,
+                    error: retryError,
+                  ));
+                }
+                return;
               }
+            } else {
+              print('❌ Token refresh failed - authentication unsuccessful');
             }
           } catch (e) {
-            print('❌ Token refresh failed: $e');
+            print('❌ Token refresh failed with error: $e');
           }
         } else if (error.response?.statusCode == 400) {
           // Bad request - log the error details
@@ -84,9 +115,26 @@ class FileMakerService extends ChangeNotifier {
   // Get current FileMaker token (for token exchange)
   String? get token => _token;
 
+  // Check if token is likely expired based on age
+  bool _isTokenExpired() {
+    if (_tokenCreatedAt == null) {
+      return true; // No timestamp means token is old/invalid
+    }
+    
+    final age = DateTime.now().difference(_tokenCreatedAt!);
+    // If token is older than 14 minutes, consider it expired
+    return age >= _tokenRefreshThreshold;
+  }
+
   // Validate existing token without re-authenticating
   Future<bool> validateToken() async {
     if (!_isAuthenticated || _token == null) {
+      return false;
+    }
+
+    // First check token age - if it's too old, don't even try
+    if (_isTokenExpired()) {
+      print('⏰ Token is expired based on age (${DateTime.now().difference(_tokenCreatedAt!).inMinutes} minutes old)');
       return false;
     }
 
@@ -98,8 +146,29 @@ class FileMakerService extends ChangeNotifier {
       });
       return response.statusCode == 200;
     } catch (e) {
+      // If validation fails, token is expired
+      if (e is DioException && e.response?.statusCode == 401) {
+        print('🔐 Token validation failed: 401 Unauthorized');
+        _invalidateToken(); // Clear the expired token
+      }
       return false;
     }
+  }
+  
+  // Invalidate token and clear authentication state
+  void _invalidateToken() {
+    _token = null;
+    _isAuthenticated = false;
+    _tokenCreatedAt = null;
+    _dio.options.headers.remove('Authorization');
+    
+    // Clear stored token and timestamp
+    SharedPreferences.getInstance().then((prefs) async {
+      await prefs.remove('filemaker_token');
+      await prefs.remove('filemaker_token_created_at');
+    });
+    
+    print('🗑️ Token invalidated and cleared');
   }
   
   // Session global variables getters
@@ -112,27 +181,74 @@ class FileMakerService extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       final storedToken = prefs.getString('filemaker_token');
+      final tokenCreatedAtStr = prefs.getString('filemaker_token_created_at');
+      
       if (storedToken != null) {
         _token = storedToken;
+        
+        // Load token creation timestamp if available
+        if (tokenCreatedAtStr != null) {
+          try {
+            _tokenCreatedAt = DateTime.parse(tokenCreatedAtStr);
+            final age = DateTime.now().difference(_tokenCreatedAt!);
+            print('📋 Loaded stored token (age: ${age.inMinutes} minutes)');
+            
+            // Check if stored token is expired
+            if (age >= _tokenRefreshThreshold) {
+              print('⏰ Stored token is expired, will re-authenticate on next request');
+              _isAuthenticated = false; // Will trigger re-auth on next request
+              return;
+            }
+          } catch (e) {
+            print('⚠️ Error parsing token timestamp: $e');
+            // If we can't parse timestamp, assume token is old
+            _tokenCreatedAt = DateTime.now().subtract(const Duration(minutes: 16)); // Force expiration
+          }
+        } else {
+          // No timestamp stored, assume token is old (from before this feature)
+          print('⚠️ No token timestamp found, assuming token is expired');
+          _tokenCreatedAt = DateTime.now().subtract(const Duration(minutes: 16)); // Force expiration
+          _isAuthenticated = false; // Will trigger re-auth on next request
+          return;
+        }
+        
         _isAuthenticated = true;
         _dio.options.headers['Authorization'] = 'Bearer $_token';
+        print('✅ Stored token loaded successfully');
       }
     } catch (e) {
+      print('⚠️ Error loading stored token: $e');
       // Error loading stored token
     }
   }
 
   Future<void> _ensureAuthenticated() async {
     if (!_isAuthenticated || _token == null) {
+      print('🔐 No token found, authenticating...');
       await authenticate();
-    } else {
-      // Validate existing token
+      return;
+    }
+    
+    // Check if token is expired based on age (proactive refresh)
+    if (_isTokenExpired()) {
+      print('⏰ Token expired (${DateTime.now().difference(_tokenCreatedAt!).inMinutes} minutes old), refreshing...');
+      _invalidateToken();
+      await authenticate();
+      return;
+    }
+    
+    // Token exists and is not expired by age, but validate it's still valid
+    // Only validate if we're close to expiration (within 1 minute) to avoid unnecessary calls
+    final age = DateTime.now().difference(_tokenCreatedAt!);
+    if (age.inMinutes >= 13) {
+      print('🔍 Token is close to expiration, validating...');
       final isValid = await validateToken();
       if (!isValid) {
         print('🔄 Token validation failed, re-authenticating...');
-      await authenticate();
+        await authenticate();
       }
     }
+    // Otherwise, assume token is valid and skip validation to avoid unnecessary API calls
   }
 
   Future<bool> authenticate() async {
@@ -161,19 +277,21 @@ class FileMakerService extends ChangeNotifier {
         final data = json.decode(response.body);
         _token = data['response']['token'];
         _isAuthenticated = true;
+        _tokenCreatedAt = DateTime.now(); // Track when token was created
         
         print('✅ FileMaker authentication successful');
         print('📋 FileMaker token set: ${_token?.substring(0, 20) ?? "null"}...');
         print('📋 FileMaker token length: ${_token?.length ?? 0}');
-        print('📋 FileMaker token full value: $_token');
+        print('⏰ Token created at: $_tokenCreatedAt');
         
         // Set Authorization header for Dio instance
         _dio.options.headers['Authorization'] = 'Bearer $_token';
         
-        // Store token for future use
+        // Store token and timestamp for future use
         try {
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('filemaker_token', _token!);
+          await prefs.setString('filemaker_token_created_at', _tokenCreatedAt!.toIso8601String());
           print('✅ FileMaker token stored in SharedPreferences');
         } catch (e) {
           print('⚠️ Error storing FileMaker token: $e');
@@ -1705,6 +1823,7 @@ class FileMakerService extends ChangeNotifier {
     
     _token = null;
     _isAuthenticated = false;
+    _tokenCreatedAt = null;
     
     // Clear session global variables
     _currentStaffId = null;
@@ -1715,7 +1834,9 @@ class FileMakerService extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('filemaker_token');
+      await prefs.remove('filemaker_token_created_at');
     } catch (e) {
+      // Ignore storage errors
     }
     
     notifyListeners();

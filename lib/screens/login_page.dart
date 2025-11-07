@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import '../services/filemaker_service.dart';
 import '../services/auth_service.dart';
@@ -21,11 +20,9 @@ class _LoginPageState extends State<LoginPage> {
   @override
   void initState() {
     super.initState();
-    // Prefill test user credentials for development/testing only
-    if (kDebugMode) {
-      _usernameController.text = 'nafisa@test.com';
-      _passwordController.text = 'Welcome123\$';
-    }
+    // Prefill default login credentials
+    _usernameController.text = 'nafisa@test.com';
+    _passwordController.text = 'Welcome123\$';
   }
 
   @override
@@ -136,13 +133,14 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[100],
+      backgroundColor: Colors.white,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24.0),
             child: Card(
-              elevation: 8,
+              elevation: 0,
+              color: Colors.white,
               child: Padding(
                 padding: const EdgeInsets.all(32.0),
                 child: Form(
@@ -150,11 +148,12 @@ class _LoginPageState extends State<LoginPage> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Logo/Title
-                      Icon(
-                        Icons.medical_services,
-                        size: 64,
-                        color: Theme.of(context).primaryColor,
+                      // Logo
+                      Image.asset(
+                        'assets/images/sphere.png',
+                        height: 300,
+                        width: 300,
+                        fit: BoxFit.contain,
                       ),
                       const SizedBox(height: 16),
                       Text(

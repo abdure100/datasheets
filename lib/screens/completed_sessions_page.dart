@@ -169,7 +169,9 @@ class _CompletedSessionsPageState extends State<CompletedSessionsPage> {
         leading: CircleAvatar(
           backgroundColor: Colors.blue[100],
           child: Text(
-            session.clientName?.substring(0, 1).toUpperCase() ?? '?',
+            (session.clientName != null && session.clientName!.isNotEmpty)
+                ? session.clientName!.substring(0, 1).toUpperCase()
+                : '?',
             style: TextStyle(
               color: Colors.blue[700],
               fontWeight: FontWeight.bold,

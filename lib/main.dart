@@ -9,6 +9,7 @@ import 'screens/session_details_page.dart';
 import 'screens/behaviors_page.dart';
 import 'screens/mcp_test_page.dart';
 import 'services/filemaker_service.dart';
+import 'services/offline_sync_service.dart';
 import 'services/token_service.dart';
 import 'providers/session_provider.dart';
 
@@ -32,9 +33,17 @@ class DataSheetsApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Initialize services
+    final fileMakerService = FileMakerService();
+    final offlineSyncService = OfflineSyncService();
+    
+    // Link services
+    offlineSyncService.setFileMakerService(fileMakerService);
+    
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider<FileMakerService>(create: (_) => FileMakerService()),
+        ChangeNotifierProvider<FileMakerService>.value(value: fileMakerService),
+        ChangeNotifierProvider<OfflineSyncService>.value(value: offlineSyncService),
         ChangeNotifierProvider(create: (_) => SessionProvider()),
       ],
       child: MaterialApp(
