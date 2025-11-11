@@ -100,7 +100,7 @@ class _SessionPageState extends State<SessionPage> {
       
       // Get program assignments
       final assignments = await fileMakerService.getProgramAssignments(widget.client!.id);
-      
+
       // Extract additional fields from raw visit data
       final company = visitFieldData?['Company']?.toString() ?? fileMakerService.currentCompanyId;
       final procedure = visitFieldData?['Procedure']?.toString();

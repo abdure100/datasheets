@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+import 'package:http/http.dart' as http;
 import '../models/client.dart';
 import '../models/visit.dart';
 import '../services/filemaker_service.dart';
 import '../services/auth_service.dart';
 import '../providers/session_provider.dart';
+import '../config/app_config.dart';
 
 class StartVisitPage extends StatefulWidget {
   const StartVisitPage({super.key});
@@ -96,8 +100,9 @@ class _StartVisitPageState extends State<StartVisitPage> {
             ),
           ),
           const SizedBox(width: 16),
-          // Client Info
+          // Client Info - Wider column
           Expanded(
+            flex: 3,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -120,8 +125,10 @@ class _StartVisitPageState extends State<StartVisitPage> {
               ],
             ),
           ),
-          // Session Button (changes based on mode)
-          _isHistoricalMode
+          // Session Button (changes based on mode) - Constrained to take less space
+          Flexible(
+            flex: 1,
+            child: _isHistoricalMode
               ? ElevatedButton.icon(
                   onPressed: () => _enterManualSheet(client),
                   icon: const Icon(Icons.edit_note, size: 18),
@@ -140,6 +147,7 @@ class _StartVisitPageState extends State<StartVisitPage> {
                     backgroundColor: Theme.of(context).primaryColor,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  ),
                   ),
                 ),
         ],
@@ -164,6 +172,305 @@ class _StartVisitPageState extends State<StartVisitPage> {
         'client': client,
       },
     );
+  }
+
+  /// Capture image from camera and upload to API
+  Future<void> _captureAndUploadGoal() async {
+    try {
+      // First, select a patient/client if not already selected
+      Client? selectedPatient = _selectedClient;
+      
+      if (selectedPatient == null) {
+        // Show dialog to select a patient
+        selectedPatient = await _showPatientSelectionDialog();
+        if (selectedPatient == null) {
+          // User cancelled patient selection
+          return;
+        }
+      }
+
+      // Open camera to capture image
+      final ImagePicker picker = ImagePicker();
+      final XFile? image = await picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+        maxWidth: 1920,
+        maxHeight: 1080,
+      );
+
+      if (image == null) {
+        // User cancelled
+        return;
+      }
+
+      // Show loading indicator
+      if (mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const Center(
+            child: CircularProgressIndicator(),
+          ),
+        );
+      }
+
+      // Upload image to API
+      final success = await _uploadImageToAPI(File(image.path), selectedPatient.id);
+
+      // Close loading indicator
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+
+      if (success) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Goal image captured and uploaded successfully for ${selectedPatient.name}!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to upload goal image. Please try again.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      // Close loading indicator if still open
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error capturing image: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Show dialog to select a patient/client
+  Future<Client?> _showPatientSelectionDialog() async {
+    if (_clients.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No patients available. Please load patients first.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return null;
+    }
+
+    return showDialog<Client>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Select Patient'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: _clients.length,
+            itemBuilder: (context, index) {
+              final client = _clients[index];
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
+                  child: Text(
+                    client.name.isNotEmpty ? client.name[0].toUpperCase() : '?',
+                    style: TextStyle(
+                      color: Theme.of(context).primaryColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                title: Text(client.name),
+                onTap: () => Navigator.of(context).pop(client),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Upload image to API endpoint using multipart/form-data
+  /// Route: POST /patient/{id}/goals/import
+  Future<bool> _uploadImageToAPI(File imageFile, String patientId) async {
+    try {
+      // Build API URL: POST /patient/{id}/goals/import
+      // Use webBaseUrl for web routes (different from API routes)
+      final apiUrl = '${AppConfig.webBaseUrl}${AppConfig.goalsImportEndpoint}/$patientId/goals/import';
+      
+      print('📤 Uploading image to: $apiUrl');
+      print('📤 Patient ID: $patientId');
+      print('📤 Image path: ${imageFile.path}');
+      print('📤 Web base URL: ${AppConfig.webBaseUrl}');
+
+      // Fetch CSRF token first (required for web routes)
+      // Laravel Sanctum provides /sanctum/csrf-cookie endpoint
+      print('🔐 Fetching CSRF token from Sanctum...');
+      final csrfCookieUrl = '${AppConfig.webBaseUrl}/sanctum/csrf-cookie';
+      final csrfResponse = await http.get(Uri.parse(csrfCookieUrl));
+      
+      // Extract cookies from response
+      // Cookies can be in a list or comma-separated string
+      final setCookieHeaders = csrfResponse.headers['set-cookie'];
+      String? sessionCookie;
+      String? xsrfToken;
+      
+      // Handle both single string and list of cookies
+      final cookieStrings = setCookieHeaders is List 
+          ? (setCookieHeaders as List).cast<String>()
+          : (setCookieHeaders != null ? [setCookieHeaders as String] : <String>[]);
+      
+      print('🍪 Received ${cookieStrings.length} cookie(s)');
+      
+      for (final cookieStr in cookieStrings) {
+        print('🍪 Cookie: $cookieStr');
+        
+        // Extract laravel_session cookie
+        final sessionMatch = RegExp(r'laravel_session=([^;]+)').firstMatch(cookieStr);
+        if (sessionMatch != null) {
+          sessionCookie = 'laravel_session=${sessionMatch.group(1)}';
+          print('✅ Session cookie extracted');
+        }
+        
+        // Extract XSRF-TOKEN cookie
+        final xsrfMatch = RegExp(r'XSRF-TOKEN=([^;]+)').firstMatch(cookieStr);
+        if (xsrfMatch != null) {
+          xsrfToken = Uri.decodeComponent(xsrfMatch.group(1)!);
+          print('✅ XSRF-TOKEN extracted: ${xsrfToken.substring(0, xsrfToken.length > 20 ? 20 : xsrfToken.length)}...');
+        }
+      }
+      
+      if (sessionCookie == null) {
+        print('⚠️ No session cookie found');
+      }
+      if (xsrfToken == null) {
+        print('⚠️ No XSRF-TOKEN found - CSRF protection may fail');
+      }
+
+      // Create multipart request
+      final request = http.MultipartRequest('POST', Uri.parse(apiUrl));
+
+      // Add headers
+      request.headers.addAll({
+        'Accept': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+        if (sessionCookie != null) 'Cookie': sessionCookie,
+        if (xsrfToken != null) 'X-XSRF-TOKEN': xsrfToken,
+      });
+
+      // Add patient_id field
+      request.fields['patient_id'] = patientId;
+      
+      // Add CSRF token as _token field (Laravel web routes expect this)
+      if (xsrfToken != null) {
+        request.fields['_token'] = xsrfToken;
+        print('✅ CSRF token added to request as _token field');
+      } else {
+        print('⚠️ No CSRF token available - request may fail with 419 error');
+      }
+
+      // Add image file to files[] array
+      final fileName = imageFile.path.split('/').last;
+
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          'files[]',  // Laravel expects files[] array
+          imageFile.path,
+          filename: fileName,
+        ),
+      );
+
+      // Add CSRF token if available (for web routes)
+      // Note: For API routes, Bearer token is usually sufficient
+      // If CSRF is required, you may need to fetch it first
+      
+      print('📤 Request fields: ${request.fields}');
+      print('📤 Request files count: ${request.files.length}');
+
+      // Send request with timeout
+      final streamedResponse = await request.send().timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw Exception('Upload timeout - server may not be responding');
+        },
+      );
+      final response = await http.Response.fromStream(streamedResponse);
+
+      print('📤 Upload response status: ${response.statusCode}');
+      print('📤 Upload response headers: ${response.headers}');
+      print('📤 Upload response body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        print('✅ Upload successful!');
+        return true;
+      } else {
+        print('❌ Upload failed with status: ${response.statusCode}');
+        print('❌ Response body: ${response.body}');
+        
+        // Check for common error codes
+        if (response.statusCode == 401) {
+          print('❌ Authentication failed - Sanctum token may be invalid or expired');
+        } else if (response.statusCode == 403) {
+          print('❌ Forbidden - CSRF token may be required or permission denied');
+          print('❌ Web routes typically require CSRF token, not Bearer token');
+          print('❌ Consider using API route: /api/patient/{id}/goals/import');
+        } else if (response.statusCode == 419) {
+          print('❌ CSRF token mismatch - web route requires CSRF token');
+          print('❌ Solution: Use API route or fetch CSRF token first');
+        } else if (response.statusCode == 404) {
+          print('❌ Route not found - check if /patient/{id}/goals/import exists');
+        } else if (response.statusCode == 422) {
+          print('❌ Validation error - check request format');
+        } else if (response.statusCode == 500) {
+          print('❌ Server error - check Laravel logs');
+        }
+        
+        return false;
+      }
+    } on SocketException catch (e) {
+      print('❌ Network error: ${e.message}');
+      print('❌ Error details: $e');
+      print('❌ Make sure server is accessible at ${AppConfig.webBaseUrl}');
+      return false;
+    } on http.ClientException catch (e) {
+      print('❌ HTTP client error: ${e.message}');
+      print('❌ Error details: $e');
+      if (e.message.contains('Connection refused')) {
+        print('❌ Connection refused - server may not be running or URL is incorrect');
+        print('❌ Expected server at: ${AppConfig.webBaseUrl}');
+      }
+      return false;
+    } catch (e, stackTrace) {
+      print('❌ Unexpected error uploading image: $e');
+      print('❌ Stack trace: $stackTrace');
+      if (e.toString().contains('Connection refused')) {
+        print('❌ Connection refused - server is not running or URL is incorrect');
+        print('❌ Expected server at: ${AppConfig.webBaseUrl}');
+      } else if (e.toString().contains('timeout')) {
+        print('❌ Request timeout - server may be slow or unreachable');
+      }
+      return false;
+    }
   }
 
 
@@ -535,6 +842,44 @@ class _StartVisitPageState extends State<StartVisitPage> {
                               SizedBox(width: 12),
                               Text(
                                 'View Completed Sessions',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    
+                    // Capture Goal Section (similar to Past Notes)
+                    const Text(
+                      '🎯 Capture Goal',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      height: 80,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.blue[300]!),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: InkWell(
+                        onTap: _captureAndUploadGoal,
+                        borderRadius: BorderRadius.circular(8),
+                        child: const Center(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.flag, size: 24, color: Colors.blue),
+                              SizedBox(width: 12),
+                              Text(
+                                'Capture Goal',
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w500,

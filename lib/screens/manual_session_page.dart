@@ -255,7 +255,7 @@ class _ManualSessionPageState extends State<ManualSessionPage> {
       
       // Get program assignments (already loaded)
       final assignments = _assignments;
-      
+
       // Extract additional fields from raw visit data
       final company = visitFieldData?['Company']?.toString() ?? fileMakerService.currentCompanyId;
       final procedure = visitFieldData?['Procedure']?.toString();

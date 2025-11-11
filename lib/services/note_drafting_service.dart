@@ -426,7 +426,7 @@ Please structure your response with:
       endTime = timeOut;
     } else if (visit.endTs != null) {
       endTime = _formatTime(visit.endTs!);
-    } else {
+      } else {
       endTime = 'Not provided';
     }
     

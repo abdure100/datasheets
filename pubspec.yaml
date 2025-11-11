@@ -35,6 +35,9 @@ dependencies:
   # Connectivity monitoring
   connectivity_plus: ^5.0.2
   
+  # Image picker for camera
+  image_picker: ^1.0.7
+  
   # UI components
   cupertino_icons: ^1.0.6
   

@@ -14,6 +14,7 @@ class _CompletedSessionsPageState extends State<CompletedSessionsPage> {
   List<Visit> _completedSessions = [];
   bool _isLoading = false;
   String _searchQuery = '';
+  String _selectedSection = 'All'; // 'All', 'Capture', 'Goal'
 
   @override
   void initState() {
@@ -43,11 +44,29 @@ class _CompletedSessionsPageState extends State<CompletedSessionsPage> {
   }
 
   List<Visit> get _filteredSessions {
-    if (_searchQuery.isEmpty) return _completedSessions;
+    List<Visit> filtered = _completedSessions;
     
-    return _completedSessions.where((session) {
-      return session.clientName?.toLowerCase().contains(_searchQuery.toLowerCase()) ?? false;
-    }).toList();
+    // Filter by section
+    if (_selectedSection == 'Capture') {
+      // Filter for sessions that need to be captured (e.g., not yet fully processed)
+      filtered = filtered.where((session) {
+        // Add your capture logic here - for now, filter by status or other criteria
+        return session.status != 'Submitted' || session.notes == null || session.notes!.isEmpty;
+      }).toList();
+    } else if (_selectedSection == 'Goal') {
+      // Filter for sessions related to goals (you may need to add goal-related filtering)
+      // For now, return all sessions
+      filtered = filtered;
+    }
+    
+    // Filter by search query
+    if (_searchQuery.isNotEmpty) {
+      filtered = filtered.where((session) {
+        return session.clientName?.toLowerCase().contains(_searchQuery.toLowerCase()) ?? false;
+      }).toList();
+    }
+    
+    return filtered;
   }
 
   @override
@@ -91,6 +110,20 @@ class _CompletedSessionsPageState extends State<CompletedSessionsPage> {
       ),
       body: Column(
         children: [
+          // Section Filter Tabs
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                _buildSectionTab('All', Icons.list),
+                const SizedBox(width: 8),
+                _buildSectionTab('Capture', Icons.camera_alt),
+                const SizedBox(width: 8),
+                _buildSectionTab('Goal', Icons.flag),
+              ],
+            ),
+          ),
           // Search Bar
           Padding(
             padding: const EdgeInsets.all(16.0),
@@ -236,6 +269,45 @@ class _CompletedSessionsPageState extends State<CompletedSessionsPage> {
       context,
       '/session-details',
       arguments: {'session': session},
+    );
+  }
+
+  Widget _buildSectionTab(String section, IconData icon) {
+    final isSelected = _selectedSection == section;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          setState(() {
+            _selectedSection = section;
+          });
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.blue[700] : Colors.grey[200],
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 18,
+                color: isSelected ? Colors.white : Colors.grey[700],
+              ),
+              const SizedBox(width: 8),
+              Text(
+                section,
+                style: TextStyle(
+                  color: isSelected ? Colors.white : Colors.grey[700],
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 

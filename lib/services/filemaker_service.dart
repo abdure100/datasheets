@@ -245,7 +245,7 @@ class FileMakerService extends ChangeNotifier {
       final isValid = await validateToken();
       if (!isValid) {
         print('🔄 Token validation failed, re-authenticating...');
-        await authenticate();
+      await authenticate();
       }
     }
     // Otherwise, assume token is valid and skip validation to avoid unnecessary API calls
@@ -601,6 +601,16 @@ class FileMakerService extends ChangeNotifier {
     visitData['Appointment_date'] = '${visit.startTs.month.toString().padLeft(2, '0')}/${visit.startTs.day.toString().padLeft(2, '0')}/${visit.startTs.year}';
     visitData['start_ts'] = visit.startTs.toIso8601String().split('.')[0];
     
+    // Format time_in from startTs (HH:MM:SS format)
+    final timeIn = '${visit.startTs.hour.toString().padLeft(2, '0')}:${visit.startTs.minute.toString().padLeft(2, '0')}:${visit.startTs.second.toString().padLeft(2, '0')}';
+    visitData['time_in'] = timeIn;
+    
+    // Format time_out from endTs if provided (HH:MM:SS format)
+    if (visit.endTs != null) {
+      final timeOut = '${visit.endTs!.hour.toString().padLeft(2, '0')}:${visit.endTs!.minute.toString().padLeft(2, '0')}:${visit.endTs!.second.toString().padLeft(2, '0')}';
+      visitData['time_out'] = timeOut;
+    }
+    
     // Add company ID if available
     if (_currentCompanyId != null) {
       visitData['Company'] = _currentCompanyId;
@@ -874,9 +884,13 @@ class FileMakerService extends ChangeNotifier {
       } else {
       }
 
+      // Format time_out from endTs (HH:MM:SS format)
+      final timeOut = '${endTs.hour.toString().padLeft(2, '0')}:${endTs.minute.toString().padLeft(2, '0')}:${endTs.second.toString().padLeft(2, '0')}';
+      
       // Now update using the recordId
       final updateData = {
         'end_ts': endTs.toIso8601String().split('.')[0],
+        'time_out': timeOut,          // Save time_out formatted from endTs
         'status': 'Submitted',        // Update both status fields
         'statusInput': 'Submitted',   // This appears to be the main status field
         'update_flagx': 3, // Trigger processing in FileMaker for session end
@@ -1026,9 +1040,13 @@ class FileMakerService extends ChangeNotifier {
       final recordData = (findData['response']['data'] as List).first;
       final recordId = recordData['recordId'];
       
-      // Update only end_ts
+      // Format time_out from endTs (HH:MM:SS format)
+      final timeOut = '${endTs.hour.toString().padLeft(2, '0')}:${endTs.minute.toString().padLeft(2, '0')}:${endTs.second.toString().padLeft(2, '0')}';
+      
+      // Update end_ts and time_out
       final updateData = {
         'end_ts': endTs.toIso8601String().split('.')[0],
+        'time_out': timeOut,  // Save time_out formatted from endTs
       };
       
       print('⏰ Updating visit end_ts: $visitId');
@@ -2326,10 +2344,10 @@ class FileMakerService extends ChangeNotifier {
                           ? (payload['ratePerMin'] as num).toDouble()
                           : null,
                     );
-                    logs.add(log);
+            logs.add(log);
                   }
                 }
-              } catch (e) {
+          } catch (e) {
                 print('⚠️ Error parsing payload_json for record ${item['recordId']}: $e');
                 continue;
               }
