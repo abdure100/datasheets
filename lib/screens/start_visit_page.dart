@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/client.dart';
 import '../models/visit.dart';
 import '../services/filemaker_service.dart';
 import '../services/auth_service.dart';
+import '../services/token_service.dart';
 import '../providers/session_provider.dart';
 import '../config/app_config.dart';
 
@@ -177,6 +179,21 @@ class _StartVisitPageState extends State<StartVisitPage> {
   /// Capture image from camera and upload to API
   Future<void> _captureAndUploadGoal() async {
     try {
+      // Check if user is authenticated (has Sanctum token)
+      final hasToken = await TokenService.hasSanctumToken();
+      if (!hasToken) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Please log in first to upload goal images.'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+        return;
+      }
+
       // First, select a patient/client if not already selected
       Client? selectedPatient = _selectedClient;
       
@@ -190,18 +207,25 @@ class _StartVisitPageState extends State<StartVisitPage> {
       }
 
       // Open camera to capture image
+      // Note: For OCR, higher quality images work better
+      // Removing maxWidth/maxHeight to get full resolution for better OCR accuracy
       final ImagePicker picker = ImagePicker();
       final XFile? image = await picker.pickImage(
         source: ImageSource.camera,
-        imageQuality: 85,
-        maxWidth: 1920,
-        maxHeight: 1080,
+        imageQuality: 100, // Maximum quality for better OCR results
+        // Removed maxWidth/maxHeight to allow full resolution
       );
 
       if (image == null) {
         // User cancelled
         return;
       }
+
+      // Log image info for debugging
+      final imageFile = File(image.path);
+      final imageSize = await imageFile.length();
+      print('📷 Image captured: ${image.path}');
+      print('📷 Image size: ${(imageSize / 1024).toStringAsFixed(2)} KB');
 
       // Show loading indicator
       if (mounted) {
@@ -215,7 +239,7 @@ class _StartVisitPageState extends State<StartVisitPage> {
       }
 
       // Upload image to API
-      final success = await _uploadImageToAPI(File(image.path), selectedPatient.id);
+      final success = await _uploadImageToAPI(imageFile, selectedPatient.id);
 
       // Close loading indicator
       if (mounted) {
@@ -246,14 +270,28 @@ class _StartVisitPageState extends State<StartVisitPage> {
       if (mounted) {
         Navigator.of(context).pop();
       }
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error capturing image: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+      
+      // Show specific error message for authentication issues
+      if (e.toString().contains('No Sanctum token') || e.toString().contains('authentication')) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Authentication required. Please log in first.'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error capturing image: ${e.toString()}'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
       }
     }
   }
@@ -311,86 +349,51 @@ class _StartVisitPageState extends State<StartVisitPage> {
   }
 
   /// Upload image to API endpoint using multipart/form-data
-  /// Route: POST /patient/{id}/goals/import
+  /// Route: POST /api/patient/{id}/goals/import
+  /// Uses API route with Bearer token authentication (no CSRF needed)
   Future<bool> _uploadImageToAPI(File imageFile, String patientId) async {
     try {
-      // Build API URL: POST /patient/{id}/goals/import
-      // Use webBaseUrl for web routes (different from API routes)
-      final apiUrl = '${AppConfig.webBaseUrl}${AppConfig.goalsImportEndpoint}/$patientId/goals/import';
+      // Build API URL: POST /api/patient/{id}/goals/import
+      // Extract base API URL (remove /mcp suffix if present)
+      String baseApiUrl = AppConfig.mcpBaseUrl;
+      if (baseApiUrl.endsWith('/mcp')) {
+        baseApiUrl = baseApiUrl.substring(0, baseApiUrl.length - 4); // Remove '/mcp'
+      }
+      final apiUrl = '$baseApiUrl/patient/$patientId/goals/import';
       
       print('📤 Uploading image to: $apiUrl');
       print('📤 Patient ID: $patientId');
       print('📤 Image path: ${imageFile.path}');
-      print('📤 Web base URL: ${AppConfig.webBaseUrl}');
+      print('📤 API base URL: $baseApiUrl');
 
-      // Fetch CSRF token first (required for web routes)
-      // Laravel Sanctum provides /sanctum/csrf-cookie endpoint
-      print('🔐 Fetching CSRF token from Sanctum...');
-      final csrfCookieUrl = '${AppConfig.webBaseUrl}/sanctum/csrf-cookie';
-      final csrfResponse = await http.get(Uri.parse(csrfCookieUrl));
-      
-      // Extract cookies from response
-      // Cookies can be in a list or comma-separated string
-      final setCookieHeaders = csrfResponse.headers['set-cookie'];
-      String? sessionCookie;
-      String? xsrfToken;
-      
-      // Handle both single string and list of cookies
-      final cookieStrings = setCookieHeaders is List 
-          ? (setCookieHeaders as List).cast<String>()
-          : (setCookieHeaders != null ? [setCookieHeaders as String] : <String>[]);
-      
-      print('🍪 Received ${cookieStrings.length} cookie(s)');
-      
-      for (final cookieStr in cookieStrings) {
-        print('🍪 Cookie: $cookieStr');
-        
-        // Extract laravel_session cookie
-        final sessionMatch = RegExp(r'laravel_session=([^;]+)').firstMatch(cookieStr);
-        if (sessionMatch != null) {
-          sessionCookie = 'laravel_session=${sessionMatch.group(1)}';
-          print('✅ Session cookie extracted');
-        }
-        
-        // Extract XSRF-TOKEN cookie
-        final xsrfMatch = RegExp(r'XSRF-TOKEN=([^;]+)').firstMatch(cookieStr);
-        if (xsrfMatch != null) {
-          xsrfToken = Uri.decodeComponent(xsrfMatch.group(1)!);
-          print('✅ XSRF-TOKEN extracted: ${xsrfToken.substring(0, xsrfToken.length > 20 ? 20 : xsrfToken.length)}...');
-        }
+      // Get Sanctum token for Bearer authentication
+      final sanctumToken = await TokenService.getSanctumToken();
+      if (sanctumToken == null || sanctumToken.isEmpty) {
+        print('❌ No Sanctum token available - authentication required');
+        throw Exception('No Sanctum token available. Please log in first.');
       }
-      
-      if (sessionCookie == null) {
-        print('⚠️ No session cookie found');
-      }
-      if (xsrfToken == null) {
-        print('⚠️ No XSRF-TOKEN found - CSRF protection may fail');
-      }
+
+      print('✅ Sanctum token found: ${sanctumToken.substring(0, sanctumToken.length > 20 ? 20 : sanctumToken.length)}...');
 
       // Create multipart request
       final request = http.MultipartRequest('POST', Uri.parse(apiUrl));
 
-      // Add headers
+      // Add headers with Bearer token (API routes use Bearer, not CSRF)
+      // Note: Don't set Content-Type manually - http library sets it with boundary
       request.headers.addAll({
         'Accept': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest',
-        if (sessionCookie != null) 'Cookie': sessionCookie,
-        if (xsrfToken != null) 'X-XSRF-TOKEN': xsrfToken,
+        'Authorization': 'Bearer $sanctumToken',
       });
 
       // Add patient_id field
       request.fields['patient_id'] = patientId;
-      
-      // Add CSRF token as _token field (Laravel web routes expect this)
-      if (xsrfToken != null) {
-        request.fields['_token'] = xsrfToken;
-        print('✅ CSRF token added to request as _token field');
-      } else {
-        print('⚠️ No CSRF token available - request may fail with 419 error');
-      }
 
       // Add image file to files[] array
       final fileName = imageFile.path.split('/').last;
+      final fileSize = await imageFile.length();
+      
+      print('📤 Image file name: $fileName');
+      print('📤 Image file size: ${(fileSize / 1024).toStringAsFixed(2)} KB');
 
       request.files.add(
         await http.MultipartFile.fromPath(
@@ -399,10 +402,6 @@ class _StartVisitPageState extends State<StartVisitPage> {
           filename: fileName,
         ),
       );
-
-      // Add CSRF token if available (for web routes)
-      // Note: For API routes, Bearer token is usually sufficient
-      // If CSRF is required, you may need to fetch it first
       
       print('📤 Request fields: ${request.fields}');
       print('📤 Request files count: ${request.files.length}');
@@ -430,17 +429,30 @@ class _StartVisitPageState extends State<StartVisitPage> {
         // Check for common error codes
         if (response.statusCode == 401) {
           print('❌ Authentication failed - Sanctum token may be invalid or expired');
+          print('❌ Please log in again to refresh your token');
         } else if (response.statusCode == 403) {
-          print('❌ Forbidden - CSRF token may be required or permission denied');
-          print('❌ Web routes typically require CSRF token, not Bearer token');
-          print('❌ Consider using API route: /api/patient/{id}/goals/import');
-        } else if (response.statusCode == 419) {
-          print('❌ CSRF token mismatch - web route requires CSRF token');
-          print('❌ Solution: Use API route or fetch CSRF token first');
+          print('❌ Forbidden - insufficient permissions for this operation');
         } else if (response.statusCode == 404) {
-          print('❌ Route not found - check if /patient/{id}/goals/import exists');
+          print('❌ Route not found - check if /api/patient/{id}/goals/import exists');
+        } else if (response.statusCode == 400) {
+          // Parse error message from response
+          try {
+            final errorData = jsonDecode(response.body);
+            final errorMessage = errorData['message'] ?? 'Unknown error';
+            print('❌ Bad request: $errorMessage');
+            
+            if (errorMessage.contains('No content extracted') || errorMessage.contains('content extracted')) {
+              print('⚠️ OCR could not extract text from the image');
+              print('💡 Tips:');
+              print('   - Ensure the image contains clear, readable text');
+              print('   - Make sure the image is in focus and well-lit');
+              print('   - Try capturing the image again with better lighting');
+            }
+          } catch (e) {
+            print('❌ Bad request - could not parse error message');
+          }
         } else if (response.statusCode == 422) {
-          print('❌ Validation error - check request format');
+          print('❌ Validation error - check request format and patient ID');
         } else if (response.statusCode == 500) {
           print('❌ Server error - check Laravel logs');
         }
@@ -450,14 +462,14 @@ class _StartVisitPageState extends State<StartVisitPage> {
     } on SocketException catch (e) {
       print('❌ Network error: ${e.message}');
       print('❌ Error details: $e');
-      print('❌ Make sure server is accessible at ${AppConfig.webBaseUrl}');
+      print('❌ Make sure server is accessible at ${AppConfig.mcpBaseUrl}');
       return false;
     } on http.ClientException catch (e) {
       print('❌ HTTP client error: ${e.message}');
       print('❌ Error details: $e');
       if (e.message.contains('Connection refused')) {
         print('❌ Connection refused - server may not be running or URL is incorrect');
-        print('❌ Expected server at: ${AppConfig.webBaseUrl}');
+        print('❌ Expected server at: ${AppConfig.mcpBaseUrl}');
       }
       return false;
     } catch (e, stackTrace) {
@@ -465,7 +477,7 @@ class _StartVisitPageState extends State<StartVisitPage> {
       print('❌ Stack trace: $stackTrace');
       if (e.toString().contains('Connection refused')) {
         print('❌ Connection refused - server is not running or URL is incorrect');
-        print('❌ Expected server at: ${AppConfig.webBaseUrl}');
+        print('❌ Expected server at: ${AppConfig.mcpBaseUrl}');
       } else if (e.toString().contains('timeout')) {
         print('❌ Request timeout - server may be slow or unreachable');
       }

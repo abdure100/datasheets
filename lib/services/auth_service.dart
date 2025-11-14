@@ -93,14 +93,31 @@ class AuthService {
           
           // Store the token securely
           print('💾 Calling TokenService.saveSanctumToken...');
+          print('💾 Token to save length: ${token.length}');
+          print('💾 Token to save preview: ${token.substring(0, token.length > 20 ? 20 : token.length)}...');
           await TokenService.saveSanctumToken(token);
           
+          // Small delay to ensure storage write completes
+          await Future.delayed(const Duration(milliseconds: 100));
+          
           // Verify it was saved
+          print('🔍 Verifying token was saved...');
           final verifyToken = await TokenService.getSanctumToken();
-          if (verifyToken != null && verifyToken == token) {
-            print('✅ Token verified after saving - ready for MCP API calls');
+          if (verifyToken != null) {
+            print('🔍 Verify token length: ${verifyToken.length}');
+            print('🔍 Verify token preview: ${verifyToken.substring(0, verifyToken.length > 20 ? 20 : verifyToken.length)}...');
+            print('🔍 Tokens match: ${verifyToken == token}');
+            
+            if (verifyToken == token) {
+              print('✅ Token verified after saving - ready for MCP API calls');
+            } else {
+              print('⚠️ Token verification failed - tokens do not match');
+              print('⚠️ Original token length: ${token.length}');
+              print('⚠️ Retrieved token length: ${verifyToken.length}');
+            }
           } else {
-            print('⚠️ Token verification failed after saving');
+            print('❌ Token verification failed - token is null after saving');
+            print('❌ This indicates a storage issue');
           }
           
           return token;

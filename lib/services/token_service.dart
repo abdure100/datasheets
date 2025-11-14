@@ -82,20 +82,38 @@ class TokenService {
   /// Get current Sanctum token (from memory or storage)
   static Future<String?> getSanctumToken() async {
     print('🔍 TokenService.getSanctumToken called');
+    print('🔍 Stack trace: ${StackTrace.current}');
     
     // Check AppConfig first (memory)
-    if (AppConfig.sanctumToken != null && AppConfig.sanctumToken!.isNotEmpty) {
-      print('✅ Token found in AppConfig (memory): ${AppConfig.sanctumToken!.length} chars');
-      return AppConfig.sanctumToken;
+    print('🔍 Checking AppConfig.sanctumToken...');
+    print('🔍 AppConfig.sanctumToken is null: ${AppConfig.sanctumToken == null}');
+    if (AppConfig.sanctumToken != null) {
+      print('🔍 AppConfig.sanctumToken is empty: ${AppConfig.sanctumToken!.isEmpty}');
+      if (AppConfig.sanctumToken!.isNotEmpty) {
+        print('✅ Token found in AppConfig (memory): ${AppConfig.sanctumToken!.length} chars');
+        print('🔍 Token preview: ${AppConfig.sanctumToken!.substring(0, AppConfig.sanctumToken!.length > 20 ? 20 : AppConfig.sanctumToken!.length)}...');
+        return AppConfig.sanctumToken;
+      } else {
+        print('⚠️ AppConfig.sanctumToken exists but is empty');
+      }
+    } else {
+      print('📂 AppConfig.sanctumToken is null, loading from storage...');
     }
     
-    print('📂 Token not in AppConfig, loading from storage...');
+    print('📂 Loading token from SharedPreferences...');
     final token = await loadSanctumToken();
     
     if (token != null) {
-      print('✅ Token retrieved from storage');
+      print('✅ Token retrieved from storage: ${token.length} chars');
+      print('🔍 Token preview: ${token.substring(0, token.length > 20 ? 20 : token.length)}...');
+      // Make sure it's also set in AppConfig for future calls
+      if (AppConfig.sanctumToken != token) {
+        print('🔄 Setting AppConfig.sanctumToken from storage...');
+        AppConfig.sanctumToken = token;
+      }
     } else {
       print('❌ No token found in memory or storage');
+      print('🔍 Final check - AppConfig.sanctumToken: ${AppConfig.sanctumToken != null ? "exists (${AppConfig.sanctumToken!.length} chars)" : "null"}');
     }
     
     return token;
