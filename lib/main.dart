@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'screens/login_page.dart';
 import 'screens/start_visit_page.dart';
 import 'screens/session_page.dart';
@@ -15,6 +16,15 @@ import 'providers/session_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Load environment variables from .env file
+  try {
+    await dotenv.load(fileName: '.env');
+    print('✅ Environment variables loaded from .env file');
+  } catch (e) {
+    print('⚠️ Could not load .env file: $e');
+    print('⚠️ Using default values from app_config.dart');
+  }
   
   print('🚀 App starting - loading Sanctum token...');
   // Load Sanctum token at app startup

@@ -102,9 +102,9 @@ class _StartVisitPageState extends State<StartVisitPage> {
             ),
           ),
           const SizedBox(width: 16),
-          // Client Info - Wider column
+          // Client Info - Reduced to leave more space for button
           Expanded(
-            flex: 3,
+            flex: 2,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -127,28 +127,28 @@ class _StartVisitPageState extends State<StartVisitPage> {
               ],
             ),
           ),
-          // Session Button (changes based on mode) - Constrained to take less space
+          // Session Button (changes based on mode) - Extended to take more space
           Flexible(
-            flex: 1,
+            flex: 2,
             child: _isHistoricalMode
               ? ElevatedButton.icon(
-                  onPressed: () => _enterManualSheet(client),
-                  icon: const Icon(Icons.edit_note, size: 18),
-                  label: const Text('Enter'),
+                  onPressed: () => _showEnterSessionModal(client),
+                  icon: const Icon(Icons.edit_note, size: 20),
+                  label: const Text('Enter Session'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.orange,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                   ),
                 )
               : ElevatedButton.icon(
                   onPressed: () => _startSessionWithClient(client),
-                  icon: const Icon(Icons.play_arrow, size: 18),
+                  icon: const Icon(Icons.play_arrow, size: 20),
                   label: const Text('Start'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Theme.of(context).primaryColor,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                   ),
                   ),
                 ),
@@ -157,6 +157,276 @@ class _StartVisitPageState extends State<StartVisitPage> {
     );
   }
 
+
+  /// Show styled modal for starting a session
+  Future<void> _showStartSessionModal(Client client) async {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            constraints: const BoxConstraints(maxWidth: 400),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Header
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).primaryColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.play_arrow,
+                    size: 48,
+                    color: Theme.of(context).primaryColor,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                
+                // Title
+                Text(
+                  'Start Session',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).primaryColor,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                
+                // Client Info
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.person, size: 20, color: Colors.grey[700]),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              client.name,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (client.dateOfBirth != null && client.dateOfBirth!.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Icon(Icons.calendar_today, size: 16, color: Colors.grey[600]),
+                            const SizedBox(width: 8),
+                            Text(
+                              'DOB: ${client.dateOfBirth}',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[700],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                
+                // Action Buttons
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            side: BorderSide(color: Colors.grey[300]!),
+                          ),
+                        ),
+                        child: const Text(
+                          'Cancel',
+                          style: TextStyle(fontSize: 16),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 2,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          _startSessionWithClient(client);
+                        },
+                        icon: const Icon(Icons.play_arrow, size: 20),
+                        label: const Text('Start'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Theme.of(context).primaryColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Show styled modal for entering a manual session
+  Future<void> _showEnterSessionModal(Client client) async {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            constraints: const BoxConstraints(maxWidth: 400),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Header
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.edit_note,
+                    size: 48,
+                    color: Colors.orange,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                
+                // Title
+                const Text(
+                  'Enter Session',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.orange,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                
+                // Client Info
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.person, size: 20, color: Colors.grey[700]),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              client.name,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (client.dateOfBirth != null && client.dateOfBirth!.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Icon(Icons.calendar_today, size: 16, color: Colors.grey[600]),
+                            const SizedBox(width: 8),
+                            Text(
+                              'DOB: ${client.dateOfBirth}',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[700],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                
+                // Action Buttons
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            side: BorderSide(color: Colors.grey[300]!),
+                          ),
+                        ),
+                        child: const Text(
+                          'Cancel',
+                          style: TextStyle(fontSize: 16),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 2,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          _enterManualSheet(client);
+                        },
+                        icon: const Icon(Icons.edit_note, size: 20),
+                        label: const Text('Enter'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   Future<void> _startSessionWithClient(Client client) async {
     setState(() => _selectedClient = client);
@@ -785,7 +1055,7 @@ class _StartVisitPageState extends State<StartVisitPage> {
                     ),
                     const SizedBox(height: 12),
                     Container(
-                      height: 200,
+                      height: 400,
                       decoration: BoxDecoration(
                         border: Border.all(color: Colors.green[300]!),
                         borderRadius: BorderRadius.circular(8),
@@ -866,43 +1136,43 @@ class _StartVisitPageState extends State<StartVisitPage> {
                     ),
                     const SizedBox(height: 20),
                     
-                    // Capture Goal Section (similar to Past Notes)
-                    const Text(
-                      '🎯 Capture Goal',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Container(
-                      height: 80,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.blue[300]!),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: InkWell(
-                        onTap: _captureAndUploadGoal,
-                        borderRadius: BorderRadius.circular(8),
-                        child: const Center(
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.flag, size: 24, color: Colors.blue),
-                              SizedBox(width: 12),
-                              Text(
-                                'Capture Goal',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
+                    // Capture Goal Section - HIDDEN per user request
+                    // const Text(
+                    //   '🎯 Capture Goal',
+                    //   style: TextStyle(
+                    //     fontSize: 20,
+                    //     fontWeight: FontWeight.bold,
+                    //   ),
+                    // ),
+                    // const SizedBox(height: 12),
+                    // Container(
+                    //   height: 80,
+                    //   decoration: BoxDecoration(
+                    //     border: Border.all(color: Colors.blue[300]!),
+                    //     borderRadius: BorderRadius.circular(8),
+                    //   ),
+                    //   child: InkWell(
+                    //     onTap: _captureAndUploadGoal,
+                    //     borderRadius: BorderRadius.circular(8),
+                    //     child: const Center(
+                    //       child: Row(
+                    //         mainAxisAlignment: MainAxisAlignment.center,
+                    //         children: [
+                    //           Icon(Icons.flag, size: 24, color: Colors.blue),
+                    //           SizedBox(width: 12),
+                    //           Text(
+                    //             'Capture Goal',
+                    //             style: TextStyle(
+                    //               fontSize: 16,
+                    //               fontWeight: FontWeight.w500,
+                    //             ),
+                    //           ),
+                    //         ],
+                    //       ),
+                    //     ),
+                    //   ),
+                    // ),
+                    // const SizedBox(height: 20),
                   ],
                 ),
               ),

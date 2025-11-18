@@ -16,9 +16,9 @@ import 'ip_service.dart';
 
 class FileMakerService extends ChangeNotifier {
   static String get baseUrl => AppConfig.baseUrl;
-  static const String database = AppConfig.database;
-  static const String username = AppConfig.username;
-  static const String password = AppConfig.password;
+  static String get database => AppConfig.database;
+  static String get username => AppConfig.username;
+  static String get password => AppConfig.password;
   
   String? _token;
   bool _isAuthenticated = false;
@@ -33,6 +33,7 @@ class FileMakerService extends ChangeNotifier {
   String? _currentStaffId;
   String? _currentCompanyId;
   String? _currentStaffName;
+  String? _currentStaffEmail;
   bool? _currentStaffCanManualEntry;
 
   FileMakerService() {
@@ -525,6 +526,7 @@ class FileMakerService extends ChangeNotifier {
         _currentStaffId = fieldData['PrimaryKey']?.toString();
         _currentCompanyId = fieldData['Company']?.toString();
         _currentStaffName = fieldData['FullName']?.toString();
+        _currentStaffEmail = fieldData['email']?.toString() ?? fieldData['Username']?.toString();
         _currentStaffCanManualEntry = fieldData['Allow_manual_entry'] == 1 || fieldData['Allow_manual_entry'] == '1';
         
         try {
@@ -592,6 +594,19 @@ class FileMakerService extends ChangeNotifier {
     throw Exception('Failed to create visit: ${response.statusCode} - ${response.body}');
   }
 
+  /// Helper function to format timestamp as MM/DD/YYYY HH:MM:SS AM/PM (e.g., "11/17/2025 12:54:41 AM")
+  String _formatLocalTimestamp(DateTime dateTime) {
+    final month = dateTime.month.toString().padLeft(2, '0');
+    final day = dateTime.day.toString().padLeft(2, '0');
+    final year = dateTime.year.toString();
+    final hour12 = dateTime.hour > 12 ? dateTime.hour - 12 : (dateTime.hour == 0 ? 12 : dateTime.hour);
+    final hour = hour12.toString().padLeft(2, '0'); // 2-digit hour with leading zero
+    final minute = dateTime.minute.toString().padLeft(2, '0');
+    final second = dateTime.second.toString().padLeft(2, '0');
+    final amPm = dateTime.hour >= 12 ? 'PM' : 'AM';
+    return '$month/$day/$year $hour:$minute:$second $amPm';
+  }
+
   // Alternative createVisit method using Dio
   Future<Visit> createVisitWithDio(Visit visit, {bool skipLocation = false}) async {
     await _ensureAuthenticated();
@@ -640,8 +655,33 @@ class FileMakerService extends ChangeNotifier {
     final ipAddress = await IPService.getDeviceIPAddress();
     visitData['submitterIPAddress'] = ipAddress ?? 'unknown';
     
+    // Add creation metadata
+    // NOTE: These fields must exist in the api_appointments layout in FileMaker
+    // If you get field errors, these fields may not exist in the layout
+    // Use email if available, otherwise fall back to username or staff name
+    if (_currentStaffEmail != null || _currentStaffName != null) {
+      final createdBy = _currentStaffEmail ?? _currentStaffName ?? 'unknown';
+      visitData['create_by'] = createdBy;
+      visitData['modified_by'] = createdBy; // Set modified_by same as create_by on creation
+      print('📝 Adding create_by: $createdBy');
+      print('📝 Adding modified_by: $createdBy');
+    } else {
+      print('⚠️ No staff email or name available for create_by field');
+    }
+    
+    // Add creation timestamp in format: MM/DD/YYYY HH:MM:SS AM/PM (e.g., "11/17/2025 12:54:41 AM")
+    final now = DateTime.now();
+    final timestamp = _formatLocalTimestamp(now);
+    
+    visitData['Local_CreationTimestamp'] = timestamp;
+    visitData['Local_ModificationTimestamp'] = timestamp;
+    print('📝 Adding Local_CreationTimestamp: ${visitData['Local_CreationTimestamp']}');
+    print('📝 Adding Local_ModificationTimestamp: ${visitData['Local_ModificationTimestamp']}');
+    
+    print('📋 Full visitData keys before sending: ${visitData.keys.toList()}');
     
     try {
+      print('📤 Sending POST request to create visit...');
       final response = await _dio.post(
         '/databases/$database/layouts/api_appointments/records',
         data: {'fieldData': visitData},
@@ -655,14 +695,53 @@ class FileMakerService extends ChangeNotifier {
         ),
       );
 
+      print('📥 Response status code: ${response.statusCode}');
+      print('📥 Response data type: ${response.data.runtimeType}');
+      
       if (response.data is Map<String, dynamic>) {
         final data = response.data as Map<String, dynamic>;
+        print('📥 Response keys: ${data.keys.toList()}');
+        
         if (data.containsKey('response')) {
           final responseData = data['response'];
           if (responseData is Map<String, dynamic>) {
+            print('📥 Response data keys: ${responseData.keys.toList()}');
           }
         }
         if (data.containsKey('messages')) {
+          final messages = data['messages'] as List?;
+          print('📥 Messages count: ${messages?.length ?? 0}');
+          if (messages != null && messages.isNotEmpty) {
+            print('📥 First message: ${messages.first}');
+          }
+        }
+      } else {
+        print('📥 Response data: ${response.data}');
+      }
+
+      // Check for errors in response
+      if (response.data is Map<String, dynamic>) {
+        final data = response.data as Map<String, dynamic>;
+        if (data.containsKey('messages')) {
+          final messages = data['messages'] as List?;
+          if (messages != null && messages.isNotEmpty) {
+            final firstMessage = messages.first as Map<String, dynamic>;
+            final code = firstMessage['code']?.toString();
+            final message = firstMessage['message']?.toString();
+            
+            // Check if error is related to invalid field names
+            if (code != '0' && code != null) {
+              print('❌ FileMaker error code: $code');
+              print('❌ FileMaker error message: $message');
+              
+              // If error is about invalid field, try without the new fields
+              if (message?.toLowerCase().contains('field') == true || 
+                  message?.toLowerCase().contains('invalid') == true) {
+                print('⚠️ Possible field name issue. Fields we added: create_by, modified_by, Local_CreationTimestamp, Local_ModificationTimestamp');
+                print('⚠️ Check if these fields exist in the api_appointments layout');
+              }
+            }
+          }
         }
       }
 
@@ -703,14 +782,136 @@ class FileMakerService extends ChangeNotifier {
         final updatedVisit = visit.copyWith(id: recordId.toString());
         return updatedVisit;
       }
+      print('❌ Failed to create visit. Status: ${response.statusCode}');
+      print('❌ Response data: ${response.data}');
       throw Exception('Failed to create visit with Dio: ${response.statusCode} - ${response.data}');
     } catch (e) {
+      print('❌ Exception in createVisitWithDio: $e');
+      print('❌ Exception type: ${e.runtimeType}');
+      if (e is DioException) {
+        print('❌ DioException response: ${e.response?.data}');
+        print('❌ DioException status: ${e.response?.statusCode}');
+      }
       rethrow;
     }
   }
 
   /// Update visit notes in FileMaker
+  /// Save notes to the dapi-api-notes layout (separate from visit record)
+  Future<void> saveNoteToNotesLayout(String visitId, String notes) async {
+    await _ensureAuthenticated();
+    
+    try {
+      final modifiedBy = _currentStaffEmail ?? _currentStaffName ?? 'unknown';
+      final now = DateTime.now();
+      
+      // Get device IP address
+      final ipAddress = await IPService.getDeviceIPAddress();
+      
+      // Create note record in dapi-api-notes layout
+      // appID links the note to the visit (appID=visitId)
+      // Only include fields that exist in the dapi-api-notes layout
+      final noteData = <String, dynamic>{
+        'appID': visitId,  // Links the note to the visit (confirmed exists)
+        'appNotes': notes.trim(),  // The actual note content
+      };
+      
+      // Try to add optional fields - if they don't exist, FileMaker will ignore them
+      // But we'll catch the error and retry without them if needed
+      try {
+        // Add these fields one at a time to identify which one is missing
+        noteData['create_by'] = modifiedBy;
+        noteData['modified_by'] = modifiedBy;
+        noteData['Local_CreationTimestamp'] = _formatLocalTimestamp(now);
+        noteData['Local_ModificationTimestamp'] = _formatLocalTimestamp(now);
+        noteData['submitterIPAddress'] = ipAddress ?? 'unknown';
+      } catch (e) {
+        print('⚠️ Error adding optional fields: $e');
+      }
+      
+      print('📝 Saving note to dapi-api-notes layout for visit: $visitId');
+      print('📝 Note data: ${jsonEncode(noteData)}');
+      
+      try {
+        final createResponse = await _dio.post(
+          '/databases/$database/layouts/dapi-api-notes/records',
+          data: {'fieldData': noteData},
+          options: Options(
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $_token',
+              'Accept': 'application/json',
+            },
+          ),
+        );
+        
+        if (createResponse.statusCode == 200 || createResponse.statusCode == 201) {
+          print('✅ Note saved successfully to dapi-api-notes layout for visit: $visitId');
+          print('📋 Response: ${jsonEncode(createResponse.data)}');
+          return;
+        } else {
+          print('❌ Failed to save note: ${createResponse.statusCode}');
+          print('❌ Response: ${jsonEncode(createResponse.data)}');
+          throw Exception('Failed to save note: ${createResponse.statusCode}');
+        }
+      } on DioException catch (e) {
+        print('❌ DioException when saving note:');
+        print('   Status code: ${e.response?.statusCode}');
+        print('   Response data: ${e.response?.data}');
+        print('   Request data: ${jsonEncode(noteData)}');
+        
+        // Try to extract FileMaker error messages
+        if (e.response?.data != null) {
+          final responseData = e.response!.data;
+          if (responseData is Map && responseData['messages'] != null) {
+            final messages = responseData['messages'] as List;
+            for (var msg in messages) {
+              print('   FileMaker Error: ${msg['code']} - ${msg['message']}');
+            }
+            
+            // If error is "Field is missing", try with minimal fields
+            final firstMessage = messages.isNotEmpty ? messages[0] : null;
+            if (firstMessage != null && firstMessage['code'] == 102) {
+              print('⚠️ Field is missing error - trying with minimal fields (appID and appNotes only)...');
+              final minimalNoteData = {
+                'appID': visitId,
+                'appNotes': notes.trim(),
+              };
+              
+              try {
+                final retryResponse = await _dio.post(
+                  '/databases/$database/layouts/dapi-api-notes/records',
+                  data: {'fieldData': minimalNoteData},
+                  options: Options(
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': 'Bearer $_token',
+                      'Accept': 'application/json',
+                    },
+                  ),
+                );
+                
+                if (retryResponse.statusCode == 200 || retryResponse.statusCode == 201) {
+                  print('✅ Note saved successfully with minimal fields');
+                  return;
+                }
+              } catch (retryError) {
+                print('❌ Retry with minimal fields also failed: $retryError');
+              }
+            }
+          }
+        }
+        
+        rethrow;
+      }
+    } catch (e) {
+      print('❌ Error saving note to dapi-api-notes layout: $e');
+      rethrow;
+    }
+  }
+
   /// Preserves existing template in visit_notes field and appends generated notes
+  /// NOTE: This method is kept for backward compatibility, but new notes should use saveNoteToNotesLayout
   Future<void> updateVisitNotes(String visitId, String notes) async {
     await _ensureAuthenticated();
     
@@ -749,9 +950,12 @@ class FileMakerService extends ChangeNotifier {
             print('📝 Final notes length: ${finalNotes.length}');
             
             // Update the visit with combined notes
+            final modifiedBy = _currentStaffEmail ?? _currentStaffName ?? 'unknown';
             final updateData = {
               'visit_notes': finalNotes,
               'update_flagx': 6, // Custom flag for notes update
+              'modified_by': modifiedBy,
+              'Local_ModificationTimestamp': _formatLocalTimestamp(DateTime.now()),
             };
             
             final updateResponse = await _dio.patch(
@@ -803,6 +1007,8 @@ class FileMakerService extends ChangeNotifier {
           updateData['start_ts'] = DateTime.now().toIso8601String().split('.')[0];
           updateData['statusInput'] = 'in_progress';
           updateData['update_flagx'] = 5; // Trigger processing in FileMaker
+          updateData['modified_by'] = _currentStaffEmail ?? _currentStaffName ?? 'unknown';
+          updateData['Local_ModificationTimestamp'] = _formatLocalTimestamp(DateTime.now());
           
           // Get current location for start
           final location = await LocationService.getCurrentLocation();
@@ -888,6 +1094,7 @@ class FileMakerService extends ChangeNotifier {
       final timeOut = '${endTs.hour.toString().padLeft(2, '0')}:${endTs.minute.toString().padLeft(2, '0')}:${endTs.second.toString().padLeft(2, '0')}';
       
       // Now update using the recordId
+      final modifiedBy = _currentStaffEmail ?? _currentStaffName ?? 'unknown';
       final updateData = {
         'end_ts': endTs.toIso8601String().split('.')[0],
         'time_out': timeOut,          // Save time_out formatted from endTs
@@ -897,6 +1104,8 @@ class FileMakerService extends ChangeNotifier {
         'end_latitude': endLatitude,
         'end_longitude': endLongitude,
         'end_location_accuracy': endAccuracy,
+        'modified_by': modifiedBy,
+        'Local_ModificationTimestamp': _formatLocalTimestamp(DateTime.now()),
       };
       
       print('🔚 Closing visit: $visitId');
@@ -1044,9 +1253,12 @@ class FileMakerService extends ChangeNotifier {
       final timeOut = '${endTs.hour.toString().padLeft(2, '0')}:${endTs.minute.toString().padLeft(2, '0')}:${endTs.second.toString().padLeft(2, '0')}';
       
       // Update end_ts and time_out
+      final modifiedBy = _currentStaffEmail ?? _currentStaffName ?? 'unknown';
       final updateData = {
         'end_ts': endTs.toIso8601String().split('.')[0],
         'time_out': timeOut,  // Save time_out formatted from endTs
+        'modified_by': modifiedBy,
+        'Local_ModificationTimestamp': _formatLocalTimestamp(DateTime.now()),
       };
       
       print('⏰ Updating visit end_ts: $visitId');
@@ -1847,6 +2059,7 @@ class FileMakerService extends ChangeNotifier {
     _currentStaffId = null;
     _currentCompanyId = null;
     _currentStaffName = null;
+    _currentStaffEmail = null;
     _currentStaffCanManualEntry = null;
     
     try {

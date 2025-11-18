@@ -1,5 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:io';
+import 'package:excel/excel.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../models/visit.dart';
 import '../services/filemaker_service.dart';
 
@@ -81,6 +87,40 @@ class _CompletedSessionsPageState extends State<CompletedSessionsPage> {
             onPressed: _loadCompletedSessions,
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh',
+          ),
+          // Bulk Export Button
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              if (value == 'export_excel') {
+                _exportToExcel();
+              } else if (value == 'export_pdf') {
+                _exportToPDF();
+              }
+            },
+            itemBuilder: (BuildContext context) => [
+              const PopupMenuItem<String>(
+                value: 'export_excel',
+                child: Row(
+                  children: [
+                    Icon(Icons.table_chart, color: Colors.green),
+                    SizedBox(width: 8),
+                    Text('Export to Excel'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem<String>(
+                value: 'export_pdf',
+                child: Row(
+                  children: [
+                    Icon(Icons.picture_as_pdf, color: Colors.red),
+                    SizedBox(width: 8),
+                    Text('Export to PDF'),
+                  ],
+                ),
+              ),
+            ],
+            icon: const Icon(Icons.download, color: Colors.white),
+            tooltip: 'Export Sessions',
           ),
           // Logout Dropdown
           PopupMenuButton<String>(
@@ -315,5 +355,192 @@ class _CompletedSessionsPageState extends State<CompletedSessionsPage> {
     // Clear any stored session data
     // Navigate back to login page
     Navigator.pushReplacementNamed(context, '/');
+  }
+
+  Future<void> _exportToExcel() async {
+    if (_filteredSessions.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No sessions to export')),
+      );
+      return;
+    }
+
+    try {
+      final excel = Excel.createExcel();
+      final sheet = excel['Sessions'];
+      
+      // Add headers
+      sheet.appendRow([
+        TextCellValue('Client Name'),
+        TextCellValue('Date'),
+        TextCellValue('Start Time'),
+        TextCellValue('End Time'),
+        TextCellValue('Duration'),
+        TextCellValue('Staff Name'),
+        TextCellValue('Service Code'),
+        TextCellValue('Status'),
+      ]);
+
+      // Add data rows
+      for (final session in _filteredSessions) {
+        final duration = session.endTs != null
+            ? session.endTs!.difference(session.startTs)
+            : null;
+        final durationStr = duration != null
+            ? '${duration.inHours}h ${duration.inMinutes.remainder(60)}m'
+            : 'N/A';
+
+        sheet.appendRow([
+          TextCellValue(session.clientName ?? 'N/A'),
+          TextCellValue(_formatDate(session.startTs)),
+          TextCellValue(_formatTime(session.startTs)),
+          TextCellValue(session.endTs != null ? _formatTime(session.endTs) : 'N/A'),
+          TextCellValue(durationStr),
+          TextCellValue(session.staffName ?? 'N/A'),
+          TextCellValue(session.serviceCode),
+          TextCellValue(session.status),
+        ]);
+      }
+
+      // Save file
+      final directory = await getApplicationDocumentsDirectory();
+      final filePath = '${directory.path}/completed_sessions_${DateTime.now().millisecondsSinceEpoch}.xlsx';
+      final file = File(filePath);
+      await file.writeAsBytes(excel.encode()!);
+
+      // Share file
+      await Share.shareXFiles(
+        [XFile(filePath)],
+        text: 'Completed Sessions Export',
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Excel file exported successfully')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error exporting to Excel: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _exportToPDF() async {
+    if (_filteredSessions.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No sessions to export')),
+      );
+      return;
+    }
+
+    try {
+      final pdf = pw.Document();
+
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          build: (pw.Context context) {
+            return [
+              pw.Header(
+                level: 0,
+                child: pw.Text(
+                  'Completed Sessions Report',
+                  style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold),
+                ),
+              ),
+              pw.SizedBox(height: 20),
+              pw.Table(
+                border: pw.TableBorder.all(),
+                children: [
+                  // Header row
+                  pw.TableRow(
+                    children: [
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text('Client', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text('Date', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text('Time', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text('Staff', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                      ),
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text('Service', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                      ),
+                    ],
+                  ),
+                  // Data rows
+                  ..._filteredSessions.map((session) {
+                    final startTime = _formatTime(session.startTs);
+                    final endTime = session.endTs != null ? _formatTime(session.endTs) : 'N/A';
+                    final timeRange = '$startTime - $endTime';
+
+                    return pw.TableRow(
+                      children: [
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text(session.clientName ?? 'N/A'),
+                        ),
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text(_formatDate(session.startTs)),
+                        ),
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text(timeRange),
+                        ),
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text(session.staffName ?? 'N/A'),
+                        ),
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text(session.serviceCode),
+                        ),
+                      ],
+                    );
+                  }).toList(),
+                ],
+              ),
+            ];
+          },
+        ),
+      );
+
+      // Save file
+      final directory = await getApplicationDocumentsDirectory();
+      final filePath = '${directory.path}/completed_sessions_${DateTime.now().millisecondsSinceEpoch}.pdf';
+      final file = File(filePath);
+      await file.writeAsBytes(await pdf.save());
+
+      // Share file
+      await Share.shareXFiles(
+        [XFile(filePath)],
+        text: 'Completed Sessions Report',
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('PDF file exported successfully')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error exporting to PDF: $e')),
+        );
+      }
+    }
   }
 }

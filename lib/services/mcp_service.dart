@@ -184,6 +184,32 @@ class MCPService {
       print('   - visitId: ${visitId ?? "null"}');
       print('   - assignmentId: ${assignmentId ?? "null (not sent)"}');
       print('   - Request body keys: ${body.keys.toList()}');
+      print('   - URL: $baseUrl/mcp/completions');
+      
+      // Log full request body (truncate messages if too long)
+      final bodyForLog = Map<String, dynamic>.from(body);
+      if (bodyForLog['messages'] != null) {
+        final messages = bodyForLog['messages'] as List;
+        if (messages.isNotEmpty) {
+          // Show first message preview
+          final firstMsg = messages[0] as Map<String, dynamic>;
+          final firstContent = firstMsg['content']?.toString() ?? '';
+          final preview = firstContent.length > 200 
+              ? '${firstContent.substring(0, 200)}...' 
+              : firstContent;
+          print('   - Messages count: ${messages.length}');
+          print('   - First message role: ${firstMsg['role']}');
+          print('   - First message content preview: $preview');
+        }
+      }
+      
+      // Log full request body as JSON (for debugging)
+      try {
+        final bodyJson = jsonEncode(body);
+        print('   - Full request body: $bodyJson');
+      } catch (e) {
+        print('   - Could not encode request body: $e');
+      }
 
       final response = await http.post(
         Uri.parse('$baseUrl/mcp/completions'),
@@ -205,6 +231,148 @@ class MCPService {
       }
     } catch (e) {
       print('❌ MCP completions error: $e');
+      rethrow;
+    }
+  }
+
+  /// Generate note using the new generate-note endpoint
+  /// 
+  /// [prompt] - Full prompt with instructions and visit info
+  /// [visitId] - Required visit ID for context retrieval
+  /// [clientId] - Optional client ID
+  /// [model] - AI model to use (default: meta-llama/Meta-Llama-3.1-8B-Instruct)
+  /// [temperature] - Temperature for AI response (default: 0.7)
+  /// [maxTokens] - Maximum tokens in response (default: 1500)
+  Future<Map<String, dynamic>> generateNote({
+    required String prompt,
+    required String visitId,
+    String? clientId,
+    String? model,
+    double? temperature,
+    int? maxTokens,
+  }) async {
+    try {
+      final body = <String, dynamic>{
+        'prompt': prompt,
+        'visitId': visitId,
+        if (clientId != null) 'clientId': clientId,
+        if (model != null) 'model': model,
+        if (temperature != null) 'temperature': temperature,
+        if (maxTokens != null) 'max_tokens': maxTokens,
+      };
+
+      final fullUrl = '$baseUrl/mcp/generate-note';
+      
+      print('📤 MCP Generate Note Request:');
+      print('   - visitId: $visitId');
+      print('   - clientId: ${clientId ?? "null"}');
+      print('   - Base URL: $baseUrl');
+      print('   - Full URL: $fullUrl');
+      print('   - Prompt length: ${prompt.length} characters');
+      print('   - Prompt preview: ${prompt.length > 200 ? prompt.substring(0, 200) + "..." : prompt}');
+      print('   - Headers: ${headers.keys.toList()}');
+      print('   - Body keys: ${body.keys.toList()}');
+
+      print('📤 Sending HTTP POST request to: $fullUrl');
+      print('📤 Headers: $headers');
+      print('📤 Body JSON: ${jsonEncode(body)}');
+      
+      http.Response response;
+      try {
+        print('📤 About to call http.post...');
+        response = await http.post(
+          Uri.parse(fullUrl),
+          headers: headers,
+          body: jsonEncode(body),
+        );
+        print('📥 HTTP response received from: $fullUrl');
+        print('📥 Response status: ${response.statusCode}');
+      } catch (e, stackTrace) {
+        print('❌ Exception during http.post: $e');
+        print('❌ Exception type: ${e.runtimeType}');
+        print('❌ Stack trace: $stackTrace');
+        rethrow;
+      }
+
+      print('📥 Response status code: ${response.statusCode}');
+      print('📥 Response body length: ${response.body.length} bytes');
+
+      if (response.statusCode == 200) {
+        print('📥 Parsing response JSON...');
+        final data = jsonDecode(response.body);
+        print('📥 Response parsed successfully');
+        print('📥 Response keys: ${data.keys.toList()}');
+        print('📥 Response success: ${data['success']}');
+        print('📥 Response has note: ${data.containsKey('note')}');
+        
+        if (data['success'] == true) {
+          final note = data['note'] as String?;
+          if (note != null) {
+            print('✅ Note generated successfully via MCP generate-note endpoint');
+            print('✅ Note length: ${note.length} characters');
+            return data;
+          } else {
+            print('⚠️ Response success=true but note is null or missing');
+            throw Exception('Note is missing from response');
+          }
+        } else {
+          throw Exception(data['error'] ?? 'Unknown error from MCP API');
+        }
+      } else if (response.statusCode == 401) {
+        throw Exception('Unauthorized: Invalid or missing token');
+      } else {
+        final errorBody = response.body;
+        print('❌ MCP generate-note error: ${response.statusCode} - $errorBody');
+        throw Exception('MCP API error: ${response.statusCode} - $errorBody');
+      }
+    } catch (e) {
+      print('❌ MCP generateNote error: $e');
+      rethrow;
+    }
+  }
+
+  /// Analyze a program using the simplified analyze endpoint
+  /// 
+  /// [programId] - The assignment/program ID to analyze
+  /// Returns the full analysis response including mastery status
+  Future<Map<String, dynamic>> analyzeProgram({
+    required String programId,
+  }) async {
+    try {
+      final body = <String, dynamic>{
+        'program_id': programId,
+      };
+
+      print('📤 MCP Analyze Program Request:');
+      print('   - program_id: $programId');
+      print('   - URL: $baseUrl/arawello/analyze');
+      print('   - Full request body: ${jsonEncode(body)}');
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/arawello/analyze'),
+        headers: headers,
+        body: jsonEncode(body),
+      );
+
+      print('📥 MCP Analyze Program Response:');
+      print('   - Status: ${response.statusCode}');
+      print('   - Body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          return data;
+        } else {
+          throw Exception(data['error'] ?? data['message'] ?? 'Unknown error from analyze endpoint');
+        }
+      } else if (response.statusCode == 401) {
+        throw Exception('Unauthorized: Invalid or missing token');
+      } else {
+        final errorBody = response.body;
+        throw Exception('Analyze endpoint error: ${response.statusCode} - $errorBody');
+      }
+    } catch (e) {
+      print('❌ MCP analyze program error: $e');
       rethrow;
     }
   }

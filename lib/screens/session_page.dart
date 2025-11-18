@@ -61,17 +61,31 @@ class _SessionPageState extends State<SessionPage> {
 
   /// Generate clinical notes from session data
   Future<void> _generateNotes() async {
-    if (widget.visit == null || widget.client == null || _isGeneratingNotes) return;
+    print('🔵 _generateNotes() called');
+    print('   - visit: ${widget.visit?.id}');
+    print('   - client: ${widget.client?.id}');
+    print('   - _isGeneratingNotes: $_isGeneratingNotes');
+    
+    if (widget.visit == null || widget.client == null || _isGeneratingNotes) {
+      print('⚠️ _generateNotes() returning early - visit or client is null, or already generating');
+      return;
+    }
 
+    print('✅ _generateNotes() proceeding...');
     setState(() {
       _isGeneratingNotes = true;
     });
+    print('✅ State updated: _isGeneratingNotes = true');
 
     try {
+      print('🔵 Getting FileMakerService...');
       final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
+      print('✅ FileMakerService obtained');
       
       // Set end_ts to current time when generating notes
+      print('🔵 Calling updateVisitEndTs...');
       await fileMakerService.updateVisitEndTs(widget.visit!.id, DateTime.now());
+      print('✅ updateVisitEndTs completed');
       
       // Fetch fresh visit record from FileMaker to get latest data with all fields
       print('🔄 Fetching fresh visit record from FileMaker...');
@@ -135,35 +149,51 @@ class _SessionPageState extends State<SessionPage> {
       print('  - Assignments: ${assignments.length}');
 
       // Generate note with MCP context
-      final noteDraft = await NoteDraftingService.generateNoteDraft(
-        session: sessionData,
-        ragContext: 'Use SOAP tone; focus on measurable outcomes and data-driven observations.',
-        visitId: widget.visit?.id,
-      );
-
-      // Save note to FileMaker
-      await _saveNoteToFileMaker(noteDraft);
-
-      setState(() {
-        _noteController.text = noteDraft;
-        _showNotes = true;
-        _isGeneratingNotes = false;
-      });
-
-      // Show success message
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Clinical note generated! Please review and submit.'),
-            backgroundColor: Colors.green,
-          ),
+      print('📞 Calling NoteDraftingService.generateNoteDraft...');
+      print('   - visitId: ${widget.visit?.id}');
+      print('   - clientId: ${sessionData.clientId}');
+      
+      try {
+        final noteDraft = await NoteDraftingService.generateNoteDraft(
+          session: sessionData,
+          ragContext: 'Use SOAP tone; focus on measurable outcomes and data-driven observations.',
+          visitId: widget.visit?.id,
         );
-        
-        // Show review dialog instead of automatically ending
-        await _showNoteReviewDialog(noteDraft);
+        print('✅ NoteDraftingService.generateNoteDraft completed successfully');
+        print('✅ Note draft length: ${noteDraft.length} characters');
+
+        // Don't save yet - let user review and edit first
+        // Note will be saved when user clicks "Submit & End Session" in the dialog
+
+        setState(() {
+          _noteController.text = noteDraft;
+          _showNotes = true;
+          _isGeneratingNotes = false;
+        });
+
+        // Show success message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Clinical note generated! Please review and submit.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          
+          // Show review dialog - note will be saved when user confirms
+          print('📋 Showing note review dialog...');
+          await _showNoteReviewDialog(noteDraft);
+          print('✅ Note review dialog completed');
+        }
+      } catch (e, stackTrace) {
+        print('❌ Error in NoteDraftingService.generateNoteDraft: $e');
+        print('❌ Stack trace: $stackTrace');
+        rethrow;
       }
 
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('❌ Error in _generateNotes: $e');
+      print('❌ Stack trace: $stackTrace');
       setState(() {
         _isGeneratingNotes = false;
       });
@@ -186,33 +216,22 @@ class _SessionPageState extends State<SessionPage> {
     try {
       final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
       
-      // Try to save to visit first, if that fails, save to session record
+      // Save note to dapi-api-notes layout
       try {
-        await fileMakerService.updateVisitNotes(widget.visit!.id, note);
-        print('✅ Note saved to visit record for visit: ${widget.visit!.id}');
+        await fileMakerService.saveNoteToNotesLayout(
+          widget.visit!.id,
+          note,
+        );
+        print('✅ Note saved to dapi-api-notes layout for visit: ${widget.visit!.id}');
       } catch (e) {
-        print('⚠️ Failed to save to visit, trying session record: $e');
-        
-        // Fallback: Save to the most recent session record
-        final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
-        final sessionRecords = sessionProvider.sessionRecords;
-        
-        if (sessionRecords.isNotEmpty) {
-          // Get the most recent session record
-          final latestRecord = sessionRecords.last;
-          
-          // Update the session record with the note
-          final updatedRecord = latestRecord.copyWith(notes: note);
-          await fileMakerService.updateSessionRecord(updatedRecord);
-          
-          print('✅ Note saved to session record: ${latestRecord.id}');
-        } else {
-          throw Exception('No session records found to save note to');
-        }
+        print('❌ Error saving note to dapi-api-notes layout: $e');
+        // Re-throw to show error to user
+        rethrow;
       }
     } catch (e) {
       print('❌ Error saving note to FileMaker: $e');
-      // Don't throw error here, just log it
+      // Re-throw to show error to user
+      rethrow;
     }
   }
 
@@ -664,61 +683,76 @@ class _SessionPageState extends State<SessionPage> {
       return;
     }
 
-    final phaseController = TextEditingController(text: 'baseline');
+    String selectedPhase = 'baseline';
     final sessionCountController = TextEditingController(text: '5');
+    final List<String> phases = ['baseline', 'intervention', 'maintenance', 'generalization'];
     
     final result = await showDialog<Map<String, String>>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.auto_awesome, color: Colors.blue),
-            SizedBox(width: 8),
-            Text('Generate Mock Data'),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.auto_awesome, color: Colors.blue),
+              SizedBox(width: 8),
+              Text('Generate Mock Data'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                value: selectedPhase,
+                decoration: const InputDecoration(
+                  labelText: 'Phase',
+                  helperText: 'Phase for all programs',
+                ),
+                items: phases.map((String phase) {
+                  return DropdownMenuItem<String>(
+                    value: phase,
+                    child: Text(phase[0].toUpperCase() + phase.substring(1)),
+                  );
+                }).toList(),
+                onChanged: (String? newValue) {
+                  if (newValue != null) {
+                    setState(() {
+                      selectedPhase = newValue;
+                    });
+                  }
+                },
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: sessionCountController,
+                decoration: const InputDecoration(
+                  labelText: 'Number of Sessions',
+                  hintText: '5',
+                  helperText: 'Number of mock sessions to generate per program',
+                ),
+                keyboardType: TextInputType.number,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop({
+                  'phase': selectedPhase,
+                  'sessionCount': sessionCountController.text.trim(),
+                });
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Generate'),
+            ),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: phaseController,
-              decoration: const InputDecoration(
-                labelText: 'Phase',
-                hintText: 'baseline, intervention, maintenance, or generalization',
-                helperText: 'Phase for all programs',
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: sessionCountController,
-              decoration: const InputDecoration(
-                labelText: 'Number of Sessions',
-                hintText: '5',
-                helperText: 'Number of mock sessions to generate per program',
-              ),
-              keyboardType: TextInputType.number,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).pop({
-                'phase': phaseController.text.trim(),
-                'sessionCount': sessionCountController.text.trim(),
-              });
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Generate'),
-          ),
-        ],
       ),
     );
 
@@ -1078,10 +1112,222 @@ class _SessionPageState extends State<SessionPage> {
     );
 
     if (result == true) {
-      // User confirmed, save edited note and end session
+      // User confirmed, save edited note first
       final editedNote = editController.text.trim();
-      await _saveNoteToFileMaker(editedNote);
-      await _endVisit(skipUnsavedDataCheck: true);
+      
+      try {
+        print('💾 Starting note save process...');
+        // Save the note
+        await _saveNoteToFileMaker(editedNote);
+        print('✅ Note saved successfully to FileMaker');
+        
+        // Stage 2: Only end session after note is successfully saved
+        print('🛑 Stage 2: Starting to end session for visit: ${widget.visit!.id}');
+        setState(() => _isEnding = true);
+        
+        final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
+        print('🛑 Calling closeVisit...');
+        final closeResult = await fileMakerService.closeVisit(widget.visit!.id, DateTime.now());
+        print('✅ Stage 2 complete: Session ended, result: $closeResult');
+        
+        // Update session provider
+        print('🔄 Updating session provider...');
+        final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
+        sessionProvider.endVisit();
+        print('✅ Session provider updated');
+        
+        setState(() {
+          _isEnding = false;
+          _isGeneratingNotes = false;
+        });
+        print('✅ State updated');
+        
+        // Navigate back to client selection page
+        if (mounted) {
+          print('🧭 Navigating to start-visit page...');
+          Navigator.pushReplacementNamed(context, '/start-visit');
+          print('✅ Navigation complete');
+          
+          // Use a small delay to ensure navigation completes before showing snackbar
+          await Future.delayed(const Duration(milliseconds: 100));
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Session ended and notes saved successfully! '
+                  'Billable minutes: ${closeResult['billableMinutes'] ?? 0}, '
+                  'Units: ${closeResult['billableUnits'] ?? 0}',
+                ),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        }
+      } catch (e, stackTrace) {
+        print('❌ Error in note save/end session flow: $e');
+        print('❌ Stack trace: $stackTrace');
+        
+        setState(() {
+          _isEnding = false;
+          _isGeneratingNotes = false;
+        });
+        
+        // If note saving or session ending fails, show error but keep session open
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error saving note or ending session: $e\nSession remains open. You can try again.'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+      }
+    } else {
+      // User cancelled, reset generating state
+      print('❌ User cancelled note review dialog');
+      setState(() => _isGeneratingNotes = false);
+    }
+  }
+
+  /// Handle "End Session & Generate note" button - generates notes first, then ends session
+  /// If note generation/saving fails, session remains open so user can continue
+  Future<void> _handleEndSessionAndGenerateNote() async {
+    if (_isGeneratingNotes || _isEnding || widget.visit == null) return;
+    
+    // Don't set _isGeneratingNotes here - let _generateNotes() set it
+    // Otherwise _generateNotes() will see it's already true and return early
+    
+    try {
+      // Stage 1: Generate notes first (before closing session)
+      print('📝 Stage 1: Generating notes for visit: ${widget.visit!.id}');
+      await _generateNotes();
+      
+      // Stage 2: Only end session after notes are successfully generated and saved
+      // This happens in the note review dialog when user clicks "Submit & End Session"
+      // The _showNoteReviewDialog will handle ending the session after saving notes
+      
+    } catch (e) {
+      setState(() => _isGeneratingNotes = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error generating notes: $e\nSession remains open. You can try again or continue the session.'),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
+
+  /// Handle "End & Generate later" button - ends session without generating notes now
+  Future<void> _handleEndAndGenerateLater() async {
+    if (_isEnding || _isGeneratingNotes || widget.visit == null) return;
+    
+    // Show confirmation dialog
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('End Session & Generate Notes Later?'),
+          content: const Text(
+            'This will end the session now. Notes can be generated later from the completed sessions page.\n\n'
+            'Do you want to proceed?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('End Session', style: TextStyle(color: Colors.orange)),
+            ),
+          ],
+        );
+      },
+    );
+    
+    if (result != true) {
+      return;
+    }
+    
+    setState(() => _isEnding = true);
+    
+    try {
+      print('🛑 Ending session (notes will be generated later) for visit: ${widget.visit!.id}');
+      final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
+      final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
+      
+      // End the session
+      final result = await fileMakerService.closeVisit(widget.visit!.id, DateTime.now());
+      print('✅ Session ended, result: $result');
+      
+      sessionProvider.endVisit();
+      
+      setState(() => _isEnding = false);
+      
+      // Navigate back to client selection page
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/start-visit');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Session ended. Notes can be generated later from completed sessions. '
+              'Billable minutes: ${result['billableMinutes'] ?? 0}, '
+              'Units: ${result['billableUnits'] ?? 0}',
+            ),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() => _isEnding = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error ending session: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Handle "Discard" button - cancels the visit without saving
+  Future<void> _handleDiscard() async {
+    if (_isEnding || widget.visit == null) return;
+    
+    // Show confirmation dialog
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Discard Session?'),
+          content: const Text(
+            'Are you sure you want to discard this session? '
+            'All unsaved data will be lost and the visit will be cancelled.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Discard', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        );
+      },
+    );
+    
+    if (result == true) {
+      // User confirmed, cancel the visit
+      await _cancelVisit();
     }
   }
 
@@ -1235,7 +1481,7 @@ class _SessionPageState extends State<SessionPage> {
           onPressed: () => _showEndSessionDialog(),
         ),
         actions: [
-          // Mock Data Generator Button - Hidden
+          // Mock Data Generator Button - HIDDEN
           // IconButton(
           //   icon: _isGeneratingMockData
           //       ? const SizedBox(
@@ -1393,13 +1639,14 @@ class _SessionPageState extends State<SessionPage> {
                           ],
                         ),
                         const SizedBox(height: 12),
-                        // Generate Notes and End Session buttons in same row
+                        // Three buttons: Generate Note, Save, Discard
                         Row(
                           children: [
-                            // Generate Notes Button
-                            Expanded(
+                            // Generate Note Button - Narrower
+                            Flexible(
+                              flex: 2,
                               child: ElevatedButton.icon(
-                                onPressed: _isGeneratingNotes ? null : _generateNotes,
+                                onPressed: (_isGeneratingNotes || _isEnding) ? null : _handleEndSessionAndGenerateNote,
                                 icon: _isGeneratingNotes 
                                     ? const SizedBox(
                                         width: 16,
@@ -1407,7 +1654,7 @@ class _SessionPageState extends State<SessionPage> {
                                         child: CircularProgressIndicator(strokeWidth: 2),
                                       )
                                     : const Icon(Icons.auto_awesome),
-                                label: Text(_isGeneratingNotes ? 'Generating...' : 'Generate Notes'),
+                                label: Text(_isGeneratingNotes ? 'Generating...' : 'Generate Note'),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.blue,
                                   foregroundColor: Colors.white,
@@ -1415,21 +1662,35 @@ class _SessionPageState extends State<SessionPage> {
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 12),
-                            // End Session Button
+                            const SizedBox(width: 8),
+                            // Save Button
                             Expanded(
                               child: ElevatedButton.icon(
-                                onPressed: _isEnding ? null : _handleEndSession,
+                                onPressed: (_isEnding || _isGeneratingNotes) ? null : _handleEndAndGenerateLater,
                                 icon: _isEnding 
                                     ? const SizedBox(
                                         width: 16,
                                         height: 16,
                                         child: CircularProgressIndicator(strokeWidth: 2),
                                       )
-                                    : const Icon(Icons.stop_circle),
-                                label: Text(_isEnding ? 'Ending...' : 'End Session'),
+                                    : const Icon(Icons.save),
+                                label: Text(_isEnding ? 'Saving...' : 'Save'),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.red,
+                                  backgroundColor: Colors.orange,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            // Discard Button
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: (_isEnding || _isGeneratingNotes) ? null : _handleDiscard,
+                                icon: const Icon(Icons.delete_outline),
+                                label: const Text('Discard'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.grey,
                                   foregroundColor: Colors.white,
                                   padding: const EdgeInsets.symmetric(vertical: 12),
                                 ),
@@ -1452,7 +1713,7 @@ class _SessionPageState extends State<SessionPage> {
                 
                 const SizedBox(height: 20),
                 
-                // Mock Data Generator Button - Hidden
+                // Mock Data Generator Button - HIDDEN
                 // ElevatedButton.icon(
                 //   onPressed: _isGeneratingMockData ? null : _showMockDataDialog,
                 //   icon: _isGeneratingMockData

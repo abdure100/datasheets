@@ -32,11 +32,20 @@ dependencies:
   sqflite: ^2.3.0
   path: ^1.8.3
   
+  # Environment variables
+  flutter_dotenv: ^5.1.0
+  
   # Connectivity monitoring
   connectivity_plus: ^5.0.2
   
   # Image picker for camera
   image_picker: ^1.0.7
+  
+  # File export
+  excel: ^4.0.4
+  pdf: ^3.10.7
+  path_provider: ^2.1.1
+  share_plus: ^7.2.1
   
   # UI components
   cupertino_icons: ^1.0.6
@@ -61,3 +70,4 @@ flutter:
 
   assets:
     - assets/images/
+    - .env

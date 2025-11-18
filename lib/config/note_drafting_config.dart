@@ -2,7 +2,7 @@
 class NoteDraftingConfig {
   // API Configuration
   static const String apiUrl = 'https://arawello.ai/v1/chat/completions';
-  static const String model = 'meta-llama/Meta-Llama-3.1-8B-Instruct';
+  static const String model = 'Qwen/Qwen2.5-7B-Instruct';
   static const double temperature = 0.3;
   static const int maxTokens = 500;
   

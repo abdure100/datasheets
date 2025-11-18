@@ -74,8 +74,40 @@ Keep it factual, professional, and payer-appropriate. Do not include PHI beyond 
     ];
   }
 
+  /// Build a single prompt string for the new generate-note endpoint
+  /// Combines system prompt and user content into one prompt
+  /// NOTE: Prompt must be <= 2000 characters per API validation
+  static String buildNotePrompt({
+    required SessionData session,
+    String ragContext = '',
+  }) {
+    // Shortened system prompt
+    final system = 'Clinical documentation assistant for ABA EMR. Generate concise, factual notes from provided data. Professional, payer-appropriate tone.';
+
+    // Build concise user content
+    final user = '''Visit: ${session.visitId} | Provider: ${session.providerName} (${session.staffTitle}) | Client: ${session.clientName} | Date: ${session.date} | Duration: ${session.durationMinutes} min | CPT: ${session.cpt}${session.modifiers.isNotEmpty ? ' | Modifiers: ${session.modifiers.join(', ')}' : ''}${session.pos.isNotEmpty ? ' | POS: ${session.pos}' : ''}
+
+Goals: ${session.goalsList.isNotEmpty ? session.goalsList.join('; ') : 'None'}
+Behaviors: ${session.behaviors.isNotEmpty ? session.behaviors : 'None'}
+Interventions: ${session.interventions.isNotEmpty ? session.interventions : 'None'}
+Data: ${session.dataSummary.isNotEmpty ? session.dataSummary : 'None'}
+Caregiver: ${session.caregiver.isNotEmpty ? session.caregiver : 'None'}
+Plan: ${session.plan.isNotEmpty ? session.plan : 'None'}
+
+${ragContext.isNotEmpty ? 'Context: $ragContext\n' : ''}Generate structured note: Session Summary, Goals Targeted, Interventions, Data Collected, Caregiver Involvement, Plan.''';
+
+    final prompt = '$system\n\n$user';
+    
+    // Log prompt length for debugging
+    if (prompt.length > 2000) {
+      print('⚠️ Prompt length: ${prompt.length} characters (exceeds 2000 limit)');
+    }
+    
+    return prompt;
+  }
+
   /// Analyze assignment data for a specific program
-  /// Uses MCP API to provide summary, analysis, and recommendations
+  /// Uses the new simplified /api/arawello/analyze endpoint
   static Future<String> analyzeAssignment({
     required String assignmentId,
     String? visitId,
@@ -87,58 +119,79 @@ Keep it factual, professional, and payer-appropriate. Do not include PHI beyond 
         final sanctumToken = await TokenService.getSanctumToken();
         if (sanctumToken != null && sanctumToken.isNotEmpty) {
           try {
-            print('🔄 Using MCP API for assignment analysis...');
+            print('🔄 Using new analyze endpoint for program analysis...');
             final mcpService = MCPService(token: sanctumToken);
             
-            // Build analysis prompt
-            final messages = [
-              {
-                'role': 'system',
-                'content': '''You are a clinical data analyst assistant. Your role is to analyze session data for specific behavioral intervention programs and provide:
-- Summary: Brief overview of the data collected
-- Analysis: Key patterns, trends, and observations
-- Recommendations: Actionable next steps for program modification or continuation
-
-Be specific, data-driven, and clinically relevant. Focus on measurable outcomes and evidence-based recommendations.''',
-              },
-              {
-                'role': 'user',
-                'content': '''Analyze the session data for assignment ID: $assignmentId
-
-${ragContext.isEmpty ? 'Provide a comprehensive analysis including summary, key observations, and clinical recommendations based on the collected session data.' : ragContext}
-
-Please structure your response with:
-1. Summary: Brief overview of data collected
-2. Analysis: Key patterns and observations
-3. Recommendations: Suggested next steps''',
-              },
-            ];
-            
-            // Use MCP completions endpoint with assignmentId only (do not send visitId)
-            final response = await mcpService.completions(
-              messages: messages,
-              visitId: null, // Explicitly null - only assignmentId is used for analysis
-              assignmentId: assignmentId,
-              model: NoteDraftingConfig.model,
-              temperature: NoteDraftingConfig.temperature,
-              maxTokens: 800, // Allow more tokens for detailed analysis
-              stream: false,
+            // Use the new simplified analyze endpoint
+            final response = await mcpService.analyzeProgram(
+              programId: assignmentId,
             );
             
-            if (response['success'] == true && response['response'] != null) {
-              final completionData = response['response'];
-              if (completionData['choices'] != null && completionData['choices'].isNotEmpty) {
-                final content = completionData['choices'][0]['message']['content'];
-                if (content != null) {
-                  print('✅ Assignment analysis generated successfully via MCP API');
-                  return content;
-                }
+            if (response['success'] == true && response['analysis'] != null) {
+              final analysis = response['analysis'] as Map<String, dynamic>;
+              
+              // Build a formatted response from the analysis data
+              final StringBuffer formattedAnalysis = StringBuffer();
+              
+              // Add program name if available
+              if (response['program_name'] != null) {
+                formattedAnalysis.writeln('**${response['program_name']}**\n');
               }
+              
+              // Add performance analysis
+              if (analysis['performance_analysis'] != null) {
+                formattedAnalysis.writeln('## Performance Analysis');
+                formattedAnalysis.writeln(analysis['performance_analysis']);
+                formattedAnalysis.writeln();
+              }
+              
+              // Add detailed analysis
+              if (analysis['detailed_analysis'] != null) {
+                formattedAnalysis.writeln('## Detailed Analysis');
+                formattedAnalysis.writeln(analysis['detailed_analysis']);
+                formattedAnalysis.writeln();
+              } else if (analysis['analysis'] != null) {
+                formattedAnalysis.writeln('## Analysis');
+                formattedAnalysis.writeln(analysis['analysis']);
+                formattedAnalysis.writeln();
+              }
+              
+              // Add recommendations
+              if (analysis['recommendations'] != null) {
+                formattedAnalysis.writeln('## Recommendations');
+                formattedAnalysis.writeln(analysis['recommendations']);
+                formattedAnalysis.writeln();
+              }
+              
+              // Add conclusion
+              if (analysis['conclusion'] != null) {
+                formattedAnalysis.writeln('## Conclusion');
+                formattedAnalysis.writeln(analysis['conclusion']);
+                formattedAnalysis.writeln();
+              }
+              
+              // Add mastery status if available
+              if (response['mastery_status'] != null) {
+                final masteryStatus = response['mastery_status'] as Map<String, dynamic>;
+                formattedAnalysis.writeln('## Mastery Status');
+                if (masteryStatus['is_mastered'] == true) {
+                  formattedAnalysis.writeln('✅ Program has achieved mastery criteria.');
+                } else {
+                  formattedAnalysis.writeln('⏳ Program is progressing toward mastery.');
+                }
+                if (masteryStatus['current_performance'] != null) {
+                  formattedAnalysis.writeln('Current Performance: ${masteryStatus['current_performance']}%');
+                }
+                formattedAnalysis.writeln();
+              }
+              
+              print('✅ Program analysis generated successfully via new analyze endpoint');
+              return formattedAnalysis.toString().trim();
             }
-            print('⚠️ MCP API response format unexpected');
-            throw Exception('Unexpected response format from MCP API');
+            print('⚠️ Analyze endpoint response format unexpected');
+            throw Exception('Unexpected response format from analyze endpoint');
           } catch (e) {
-            print('❌ MCP API failed: $e');
+            print('❌ Analyze endpoint failed: $e');
             rethrow;
           }
         } else {
@@ -165,40 +218,72 @@ Please structure your response with:
     try {
       // Try MCP API first if enabled and token is available
       if (useMCP) {
+        print('🔵 Checking for Sanctum token...');
         final sanctumToken = await TokenService.getSanctumToken();
+        print('🔵 Sanctum token check result: ${sanctumToken != null ? "found (${sanctumToken.length} chars)" : "null"}');
+        
         if (sanctumToken != null && sanctumToken.isNotEmpty) {
           try {
             print('🔄 Using MCP API for note generation...');
+            print('🔵 Creating MCPService instance...');
             final mcpService = MCPService(token: sanctumToken);
+            print('✅ MCPService created');
             
-            // Build messages in OpenAI format
-            final messages = buildNoteDraftMessages(session: session, ragContext: ragContext);
+            // Build prompt for new generate-note endpoint
+            print('🔵 Building note prompt...');
+            final prompt = buildNotePrompt(session: session, ragContext: ragContext);
+            print('✅ Prompt built, length: ${prompt.length} characters');
             
-            // Use MCP completions endpoint with context
-            // Only send visitId - do not send assignmentId or clientId
-            final response = await mcpService.completions(
-              messages: messages,
+            // Use new generate-note endpoint
+            // visitId is required, clientId is optional
+            if (visitId == null || visitId.isEmpty) {
+              throw Exception('visitId is required for generate-note endpoint');
+            }
+            
+            print('🔵 Calling mcpService.generateNote...');
+            print('   - visitId: $visitId');
+            print('   - clientId: ${session.clientId}');
+            print('   - model: Qwen/Qwen2.5-7B-Instruct');
+            
+            final response = await mcpService.generateNote(
+              prompt: prompt,
               visitId: visitId,
-              assignmentId: null, // Explicitly null - only visitId is used for note generation
-              model: NoteDraftingConfig.model,
+              clientId: session.clientId,
+              model: 'Qwen/Qwen2.5-7B-Instruct',
               temperature: NoteDraftingConfig.temperature,
               maxTokens: NoteDraftingConfig.maxTokens,
-              stream: false,
             );
             
-            if (response['success'] == true && response['response'] != null) {
-              final completionData = response['response'];
-              if (completionData['choices'] != null && completionData['choices'].isNotEmpty) {
-                final content = completionData['choices'][0]['message']['content'];
-                if (content != null) {
-                  print('✅ Note generated successfully via MCP API');
-                  return content;
-                }
-              }
+            print('✅ mcpService.generateNote returned');
+            print('🔵 Response keys: ${response.keys.toList()}');
+            print('🔵 Response success: ${response['success']}');
+            print('🔵 Response has note: ${response.containsKey('note')}');
+            
+            if (response['success'] == true && response['note'] != null) {
+              var note = response['note'] as String;
+              
+              // Replace model name attribution with just "Arawello AI"
+              // Remove model names like (Meta-Llama-3.1-8B-Instruct) or (Qwen/Qwen2.5-7B-Instruct)
+              note = note.replaceAll(RegExp(r'\(Meta-Llama[^)]+\)', caseSensitive: false), '');
+              note = note.replaceAll(RegExp(r'\(Qwen[^)]+\)', caseSensitive: false), '');
+              
+              // Replace "Generated by Arawello AI" patterns with just "Arawello AI"
+              note = note.replaceAll(RegExp(r'\*\*Generated by Arawello AI[^*]*\*\*', caseSensitive: false), '**Arawello AI**');
+              note = note.replaceAll(RegExp(r'Generated by Arawello AI[^\n]*', caseSensitive: false), 'Arawello AI');
+              
+              // Clean up any double newlines or extra spaces left behind
+              note = note.replaceAll(RegExp(r'\n{3,}'), '\n\n').trim();
+              
+              print('✅ Note generated successfully via MCP generate-note endpoint');
+              print('✅ Note length: ${note.length} characters (after cleanup)');
+              return note;
             }
             print('⚠️ MCP API response format unexpected, falling back to direct API');
-          } catch (e) {
-            print('⚠️ MCP API failed, falling back to direct API: $e');
+          } catch (e, stackTrace) {
+            print('❌ MCP API failed with exception: $e');
+            print('❌ Exception type: ${e.runtimeType}');
+            print('❌ Stack trace: $stackTrace');
+            print('⚠️ MCP API failed, falling back to direct API');
             // Fall through to direct API call
           }
         } else {
@@ -232,7 +317,19 @@ Please structure your response with:
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return data['choices'][0]['message']['content'] ?? 'Note generation failed';
+        var note = data['choices'][0]['message']['content'] ?? 'Note generation failed';
+        
+        // Replace model name attribution with just "Arawello AI"
+        // Remove model names like (Meta-Llama-3.1-8B-Instruct) or (Qwen/Qwen2.5-7B-Instruct)
+        note = note.replaceAll(RegExp(r'\(Meta-Llama[^)]+\)', caseSensitive: false), '');
+        note = note.replaceAll(RegExp(r'\(Qwen[^)]+\)', caseSensitive: false), '');
+        
+        // Replace "Generated by Arawello AI" patterns with just "Arawello AI"
+        note = note.replaceAll(RegExp(r'\*\*Generated by Arawello AI[^*]*\*\*', caseSensitive: false), '**Arawello AI**');
+        note = note.replaceAll(RegExp(r'Generated by Arawello AI[^\n]*', caseSensitive: false), 'Arawello AI');
+        note = note.replaceAll(RegExp(r'\n{3,}'), '\n\n').trim();
+        
+        return note;
       } else {
         throw Exception('API request failed: ${response.statusCode} - ${response.body}');
       }
