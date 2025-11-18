@@ -132,7 +132,7 @@ class _StartVisitPageState extends State<StartVisitPage> {
             flex: 2,
             child: _isHistoricalMode
               ? ElevatedButton.icon(
-                  onPressed: () => _showEnterSessionModal(client),
+                  onPressed: () => _enterManualSheet(client),
                   icon: const Icon(Icons.edit_note, size: 20),
                   label: const Text('Enter Session'),
                   style: ElevatedButton.styleFrom(

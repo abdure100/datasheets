@@ -15,7 +15,10 @@
             
             try {
                 // Test authentication
-                const credentials = btoa('fmapi:Sphere321$');
+                // NOTE: Replace with your actual credentials - do not commit passwords to git
+                const username = 'fmapi'; // Replace with your username
+                const password = 'YOUR_PASSWORD_HERE'; // Replace with your password
+                const credentials = btoa(`${username}:${password}`);
                 const response = await fetch('https://devdb.sphereemr.com/fmi/data/v1/databases/EIDBI/sessions', {
                     method: 'POST',
                     headers: {

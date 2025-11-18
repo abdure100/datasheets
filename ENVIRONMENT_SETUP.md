@@ -22,7 +22,7 @@ class AppConfig {
   static const String baseUrl = 'https://devdb.sphereemr.com/fmi/data/vLatest';
   static const String database = 'EIDBI';
   static const String username = 'fmapi';
-  static const String password = 'Sphere321\$';
+  static const String password = 'YOUR_PASSWORD_HERE'; // Set your password here
   
   // App Configuration
   static const String appName = 'DataSheets';

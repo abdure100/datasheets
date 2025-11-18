@@ -8,7 +8,8 @@ class NoteDraftingConfig {
   
   // Optional: Add your API key here
   // For production, consider using environment variables or secure storage
-  static const String apiKey = 'ca4d912f0e81d40a50293afdd7547fe604937bf638e4cad6eba69527d5810289'; // Set to your API key if needed
+  // NOTE: Do not commit API keys to git - use environment variables or secure storage
+  static const String apiKey = ''; // Set to your API key if needed
   
   // Alternative API configurations
   static const String openaiApiUrl = 'https://api.openai.com/v1/chat/completions';

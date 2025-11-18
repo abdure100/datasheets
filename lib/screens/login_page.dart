@@ -20,9 +20,6 @@ class _LoginPageState extends State<LoginPage> {
   @override
   void initState() {
     super.initState();
-    // Prefill default login credentials
-      _usernameController.text = 'nafisa@test.com';
-      _passwordController.text = 'Welcome123\$';
   }
 
   @override

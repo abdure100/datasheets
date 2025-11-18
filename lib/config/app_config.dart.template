@@ -1,9 +1,40 @@
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
 class AppConfig {
   // FileMaker Configuration
-  static const String baseUrl = 'db.sphereemr.com';
-  static const String database = 'EIDBI';
-  static const String username = 'fmapi';
-  static const String password = 'Sphere321!';
+  // Load from environment variables (.env file)
+  // NOTE: Never commit passwords to git - use .env file only
+  static String get baseUrl {
+    final url = dotenv.env['FILEMAKER_BASE_URL'];
+    if (url == null || url.isEmpty) {
+      throw Exception('FILEMAKER_BASE_URL must be set in .env file');
+    }
+    return url;
+  }
+  
+  static String get database {
+    final db = dotenv.env['FILEMAKER_DATABASE'];
+    if (db == null || db.isEmpty) {
+      throw Exception('FILEMAKER_DATABASE must be set in .env file');
+    }
+    return db;
+  }
+  
+  static String get username {
+    final user = dotenv.env['FILEMAKER_USERNAME'];
+    if (user == null || user.isEmpty) {
+      throw Exception('FILEMAKER_USERNAME must be set in .env file');
+    }
+    return user;
+  }
+  
+  static String get password {
+    final pwd = dotenv.env['FILEMAKER_PASSWORD'];
+    if (pwd == null || pwd.isEmpty) {
+      throw Exception('FILEMAKER_PASSWORD must be set in .env file');
+    }
+    return pwd;
+  }
   
   // App Configuration
   static const String appName = 'DataSheets';
@@ -12,4 +43,13 @@ class AppConfig {
   // API Configuration
   static const int connectionTimeout = 30;
   static const int receiveTimeout = 30;
+  
+  // MCP API Configuration
+  // For production/device testing, use production URL
+  // For local development, use: 'http://127.0.0.1:8000/api' (requires Laravel server running)
+  static const String mcpBaseUrl = 'https://eidbi.sphereemr.com/api';
+  // static const String mcpBaseUrl = 'http://127.0.0.1:8000/api'; // Local dev only
+  
+  // Sanctum Token (set at runtime, not hardcoded)
+  static String? sanctumToken;
 }
