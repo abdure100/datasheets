@@ -2,13 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'screens/login_page.dart';
-import 'screens/start_visit_page.dart';
+import 'screens/overview_page.dart';
 import 'screens/session_page.dart';
 import 'screens/manual_session_page.dart';
 import 'screens/completed_sessions_page.dart';
 import 'screens/session_details_page.dart';
 import 'screens/behaviors_page.dart';
 import 'screens/mcp_test_page.dart';
+import 'screens/observation_directions_page.dart';
 import 'services/filemaker_service.dart';
 import 'services/offline_sync_service.dart';
 import 'services/token_service.dart';
@@ -83,7 +84,7 @@ class DataSheetsApp extends StatelessWidget {
         ),
         home: const LoginPage(),
         routes: {
-          '/start-visit': (context) => const StartVisitPage(),
+          '/start-visit': (context) => const OverviewPage(),
           '/session': (context) {
             final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
             return SessionPage(
@@ -108,6 +109,13 @@ class DataSheetsApp extends StatelessWidget {
             );
           },
           '/mcp-test': (context) => const MCPTestPage(),
+          '/observation-directions': (context) {
+            final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+            return ObservationDirectionsPage(
+              visit: args?['visit'],
+              client: args?['client'],
+            );
+          },
         },
       ),
     );

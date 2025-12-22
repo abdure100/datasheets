@@ -383,9 +383,7 @@ class _CompletedSessionsPageState extends State<CompletedSessionsPage> {
 
       // Add data rows
       for (final session in _filteredSessions) {
-        final duration = session.endTs != null
-            ? session.endTs!.difference(session.startTs)
-            : null;
+        final duration = session.endTs?.difference(session.startTs);
         final durationStr = duration != null
             ? '${duration.inHours}h ${duration.inMinutes.remainder(60)}m'
             : 'N/A';
@@ -510,7 +508,7 @@ class _CompletedSessionsPageState extends State<CompletedSessionsPage> {
                         ),
                       ],
                     );
-                  }).toList(),
+                  }),
                 ],
               ),
             ];

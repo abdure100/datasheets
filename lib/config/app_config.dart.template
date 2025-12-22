@@ -47,7 +47,7 @@ class AppConfig {
   // MCP API Configuration
   // For production/device testing, use production URL
   // For local development, use: 'http://127.0.0.1:8000/api' (requires Laravel server running)
-  static const String mcpBaseUrl = 'https://eidbi.sphereemr.com/api';
+  static const String mcpBaseUrl = 'https://fms.sphereemr.com/api';
   // static const String mcpBaseUrl = 'http://127.0.0.1:8000/api'; // Local dev only
   
   // Sanctum Token (set at runtime, not hardcoded)

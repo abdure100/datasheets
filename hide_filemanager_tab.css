@@ -1,0 +1,30 @@
+/**
+ * CSS to Hide FileManager Tab on Documents Page
+ * 
+ * Add this CSS to hide the filemanager tab and prevent 403 errors
+ */
+
+/* Hide filemanager tab by various selectors */
+a[href*="filemanager"],
+a[href*="file-manager"],
+button[onclick*="filemanager"],
+button[onclick*="file-manager"],
+[data-tab="filemanager"],
+[data-tab="file-manager"],
+.filemanager-tab,
+.file-manager-tab,
+#filemanager-tab,
+#file-manager-tab {
+    display: none !important;
+    visibility: hidden !important;
+}
+
+/* Hide parent container if it's a tab list item */
+li:has(a[href*="filemanager"]),
+li:has(button[onclick*="filemanager"]),
+.tab:has(a[href*="filemanager"]),
+[role="tab"]:has(a[href*="filemanager"]) {
+    display: none !important;
+    visibility: hidden !important;
+}
+

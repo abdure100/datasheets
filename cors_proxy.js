@@ -17,7 +17,7 @@ const server = http.createServer((req, res) => {
   }
 
   // Parse the target URL - prepend FileMaker domain
-  const targetUrl = 'https://devdb.sphereemr.com' + req.url;
+  const targetUrl = 'https://fms.sphereemr.com' + req.url;
   const parsedUrl = url.parse(targetUrl);
   
   console.log(`Proxying ${req.method} ${req.url} to ${targetUrl}`);
@@ -56,5 +56,5 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, () => {
   console.log(`CORS proxy server running on http://localhost:${PORT}`);
   console.log('Usage: http://localhost:3002/fmi/data/v1/databases/EIDBI/sessions');
-  console.log('Will proxy to: https://devdb.sphereemr.com/fmi/data/v1/databases/EIDBI/sessions');
+  console.log('Will proxy to: https://fms.sphereemr.com/fmi/data/v1/databases/EIDBI/sessions');
 });

@@ -269,7 +269,7 @@ class MCPService {
       print('   - Base URL: $baseUrl');
       print('   - Full URL: $fullUrl');
       print('   - Prompt length: ${prompt.length} characters');
-      print('   - Prompt preview: ${prompt.length > 200 ? prompt.substring(0, 200) + "..." : prompt}');
+      print('   - Prompt preview: ${prompt.length > 200 ? "${prompt.substring(0, 200)}..." : prompt}');
       print('   - Headers: ${headers.keys.toList()}');
       print('   - Body keys: ${body.keys.toList()}');
 
@@ -373,6 +373,62 @@ class MCPService {
       }
     } catch (e) {
       print('❌ MCP analyze program error: $e');
+      rethrow;
+    }
+  }
+
+  /// Submit Patient Rights & Responsibilities form
+  /// 
+  /// [payload] - Map containing all form data:
+  ///   - clientId: Patient ID (required)
+  ///   - guardian_name (required)
+  ///   - guardian_date (required)
+  ///   - qsp_name (required)
+  ///   - qsp_date (required)
+  ///   - All consent checkboxes (benefits_of_treatment, treatment_administration, etc.)
+  ///   - Optional: signatures, interpreter fields
+  Future<Map<String, dynamic>> submitRightsResponsibilities(Map<String, dynamic> payload) async {
+    // This endpoint is on portal.sphereemr.com, not fms.sphereemr.com
+    const String portalUrl = 'https://portal.sphereemr.com/api';
+    
+    try {
+      final url = '$portalUrl/mcp/rights-responsibilities';
+      final body = jsonEncode(payload);
+      
+      print('📝 Submitting Rights & Responsibilities form');
+      print('   - URL: $url');
+      print('   - Client ID: ${payload['clientId']}');
+      print('   - Guardian: ${payload['guardian_name']}');
+      print('   - Full Payload: $body');
+      
+      final response = await http.post(
+        Uri.parse(url),
+        headers: headers,
+        body: body,
+      );
+
+      print('📥 Rights & Responsibilities Response:');
+      print('   - Status: ${response.statusCode}');
+      print('   - Body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          print('✅ Rights & Responsibilities form submitted successfully');
+          return data;
+        } else {
+          throw Exception(data['error'] ?? data['message'] ?? 'Unknown error');
+        }
+      } else if (response.statusCode == 401) {
+        throw Exception('Unauthorized: Invalid or missing token');
+      } else if (response.statusCode == 422) {
+        final errorBody = jsonDecode(response.body);
+        throw Exception('Validation error: ${errorBody['message'] ?? errorBody['errors'] ?? response.body}');
+      } else {
+        throw Exception('Server error: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e) {
+      print('❌ Rights & Responsibilities submission error: $e');
       rethrow;
     }
   }

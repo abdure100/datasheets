@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/filemaker_service.dart';
 import '../services/auth_service.dart';
+import '../services/credential_service.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -16,10 +17,30 @@ class _LoginPageState extends State<LoginPage> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _obscurePassword = true;
+  bool _savePassword = true; // Default to saving password
 
   @override
   void initState() {
     super.initState();
+    _loadSavedCredentials();
+  }
+
+  /// Load saved credentials from secure storage
+  Future<void> _loadSavedCredentials() async {
+    try {
+      final credentials = await CredentialService.getSavedCredentials();
+      if (credentials['username'] != null) {
+        _usernameController.text = credentials['username']!;
+      }
+      if (credentials['password'] != null) {
+        _passwordController.text = credentials['password']!;
+        setState(() {
+          _savePassword = true; // If password is saved, keep the checkbox checked
+        });
+      }
+    } catch (e) {
+      print('⚠️ Could not load saved credentials: $e');
+    }
   }
 
   @override
@@ -107,7 +128,24 @@ class _LoginPageState extends State<LoginPage> {
       }
       print('🔍 LOGIN DEBUG: Step 3 completed');
       
-      // Step 4: Navigate to start visit page
+      // Step 4: Save credentials if user opted in
+      if (_savePassword) {
+        try {
+          await CredentialService.saveCredentials(
+            username: email,
+            password: password,
+          );
+          print('✅ Credentials saved securely');
+        } catch (e) {
+          print('⚠️ Could not save credentials: $e');
+          // Don't block login if credential saving fails
+        }
+      } else {
+        // Clear saved credentials if user unchecked the box
+        await CredentialService.clearCredentials();
+      }
+      
+      // Step 5: Navigate to start visit page
       if (mounted) {
         Navigator.pushReplacementNamed(context, '/start-visit');
       }
@@ -172,6 +210,8 @@ class _LoginPageState extends State<LoginPage> {
                       // Email Field
                       TextFormField(
                         controller: _usernameController,
+                        keyboardType: TextInputType.emailAddress,
+                        autofillHints: const [AutofillHints.email],
                         decoration: const InputDecoration(
                           labelText: 'Email',
                           prefixIcon: Icon(Icons.email),
@@ -194,6 +234,7 @@ class _LoginPageState extends State<LoginPage> {
                       TextFormField(
                         controller: _passwordController,
                         obscureText: _obscurePassword,
+                        autofillHints: const [AutofillHints.password],
                         decoration: InputDecoration(
                           labelText: 'Password',
                           prefixIcon: const Icon(Icons.lock),
@@ -214,6 +255,33 @@ class _LoginPageState extends State<LoginPage> {
                           return null;
                         },
                         enabled: !_isLoading,
+                        onEditingComplete: () {
+                          // Trigger autofill on iOS
+                          FocusScope.of(context).nextFocus();
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      
+                      // Save Password Checkbox
+                      Row(
+                        children: [
+                          Checkbox(
+                            value: _savePassword,
+                            onChanged: _isLoading
+                                ? null
+                                : (value) {
+                                    setState(() {
+                                      _savePassword = value ?? true;
+                                    });
+                                  },
+                          ),
+                          const Expanded(
+                            child: Text(
+                              'Save password on this device',
+                              style: TextStyle(fontSize: 14),
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 24),
 

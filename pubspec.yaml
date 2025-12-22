@@ -5,7 +5,7 @@ description: >
 
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.0.0+8
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -31,6 +31,7 @@ dependencies:
   shared_preferences: ^2.2.2
   sqflite: ^2.3.0
   path: ^1.8.3
+  flutter_secure_storage: ^9.0.0
   
   # Environment variables
   flutter_dotenv: ^5.1.0

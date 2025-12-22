@@ -21,7 +21,7 @@ app.use((req, res, next) => {
 // ✅ Mount the proxy AFTER CORS handling
 app.use('/fmi',
   createProxyMiddleware({
-    target: 'https://devdb.sphereemr.com',
+    target: 'https://fms.sphereemr.com',
     changeOrigin: true,
     secure: true,
     // Let the proxy return FM's body as-is (including error messages[])
@@ -51,5 +51,5 @@ const PORT = 3002;
 app.listen(PORT, () => {
   console.log(`Fixed CORS proxy server running on http://localhost:${PORT}`);
   console.log('Usage: http://localhost:3002/fmi/data/v1/databases/EIDBI/sessions');
-  console.log('Will proxy to: https://devdb.sphereemr.com/fmi/data/v1/databases/EIDBI/sessions');
+  console.log('Will proxy to: https://fms.sphereemr.com/fmi/data/v1/databases/EIDBI/sessions');
 });

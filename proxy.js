@@ -13,11 +13,11 @@ app.use(cors({
 
 app.get('/health', (req, res) => res.status(200).send('ok'));
 
-// We mount at /fmi, and we target https://devdb.sphereemr.com/fmi
+// We mount at /fmi, and we target https://fms.sphereemr.com/fmi
 // Then we REWRITE the prefix "^/fmi" → "" so upstream receives "/data/v1/..."
 app.use('/fmi', createProxyMiddleware({
-  target: 'https://devdb.sphereemr.com/fmi',
-  changeOrigin: true,          // sets Host/SNI to devdb.sphereemr.com
+  target: 'https://fms.sphereemr.com/fmi',
+  changeOrigin: true,          // sets Host/SNI to fms.sphereemr.com
   secure: true,                // set false only if upstream cert is self-signed
   selfHandleResponse: false,   // pass FM response body as-is (incl. messages[])
   logLevel: 'debug',
@@ -27,7 +27,7 @@ app.use('/fmi', createProxyMiddleware({
     return out;
   },
   onProxyReq(proxyReq, req) {
-    proxyReq.setHeader('Host', 'devdb.sphereemr.com'); // ensure exact vhost
+    proxyReq.setHeader('Host', 'fms.sphereemr.com'); // ensure exact vhost
     console.log('→', req.method, req.originalUrl, '   (upstream path after rewrite)');
   },
   onProxyRes(proxyRes, req) {

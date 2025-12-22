@@ -19,7 +19,7 @@ Your app uses a **hardcoded configuration approach** in `lib/config/app_config.d
 ```dart
 class AppConfig {
   // FileMaker Configuration
-  static const String baseUrl = 'https://devdb.sphereemr.com/fmi/data/vLatest';
+  static const String baseUrl = 'https://fms.sphereemr.com/fmi/data/vLatest';
   static const String database = 'EIDBI';
   static const String username = 'fmapi';
   static const String password = 'YOUR_PASSWORD_HERE'; // Set your password here

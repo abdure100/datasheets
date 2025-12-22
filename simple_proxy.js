@@ -10,7 +10,7 @@ app.use(cors());
 
 // Proxy FileMaker API requests
 app.use('/fmi', createProxyMiddleware({
-  target: 'https://devdb.sphereemr.com',
+  target: 'https://fms.sphereemr.com',
   changeOrigin: true,
   secure: true,
   onError: (err, req, res) => {
@@ -21,5 +21,5 @@ app.use('/fmi', createProxyMiddleware({
 
 app.listen(PORT, () => {
   console.log(`Proxy server running on http://localhost:${PORT}`);
-  console.log('FileMaker API requests will be proxied to https://devdb.sphereemr.com');
+  console.log('FileMaker API requests will be proxied to https://fms.sphereemr.com');
 });

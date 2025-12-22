@@ -12,6 +12,548 @@ import '../services/token_service.dart';
 import '../providers/session_provider.dart';
 import '../config/app_config.dart';
 
+/// Datasheet Tab Content - Used in Overview page tabs
+class DatasheetTabContent extends StatefulWidget {
+  const DatasheetTabContent({super.key});
+
+  @override
+  State<DatasheetTabContent> createState() => _DatasheetTabContentState();
+}
+
+class _DatasheetTabContentState extends State<DatasheetTabContent> {
+  final _formKey = GlobalKey<FormState>();
+  Client? _selectedClient;
+  List<Client> _clients = [];
+  bool _isLoading = false;
+  bool _isHistoricalMode = false;
+  final DateTime _selectedDate = DateTime.now();
+  final TimeOfDay _selectedStartTime = TimeOfDay.now();
+  final TimeOfDay _selectedEndTime = TimeOfDay.now();
+  
+  String get _currentStaffId => Provider.of<FileMakerService>(context, listen: false).currentStaffId ?? '';
+  String get _currentServiceCode => 'Intervention (97153)';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadClients();
+  }
+
+  Future<void> _loadClients() async {
+    setState(() => _isLoading = true);
+    try {
+      final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
+      final clients = await fileMakerService.getClients();
+      clients.sort((a, b) => a.name.compareTo(b.name));
+      
+      setState(() {
+        _clients = clients;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading clients: $e')),
+        );
+      }
+    }
+  }
+
+  Widget _buildClientRow(Client client) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: Colors.grey[200]!),
+        ),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 24,
+            backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
+            child: Text(
+              client.name.isNotEmpty ? client.name[0].toUpperCase() : '?',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).primaryColor,
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            flex: 2,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  client.name,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (client.dateOfBirth != null && client.dateOfBirth!.isNotEmpty)
+                  Text(
+                    'DOB: ${client.dateOfBirth}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Flexible(
+            flex: 2,
+            child: _isHistoricalMode
+              ? ElevatedButton.icon(
+                  onPressed: () => _enterManualSheet(client),
+                  icon: const Icon(Icons.edit_note, size: 20),
+                  label: const Text('Enter Session'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  ),
+                )
+              : ElevatedButton.icon(
+                  onPressed: () => _startSessionWithClient(client),
+                  icon: const Icon(Icons.play_arrow, size: 20),
+                  label: const Text('Start'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Theme.of(context).primaryColor,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  ),
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _startSessionWithClient(Client client) async {
+    setState(() => _selectedClient = client);
+    
+    final sessionType = await _showSessionTypeDialog();
+    if (sessionType == null) return;
+    
+    if (sessionType == 'therapy') {
+      await _startVisit();
+    } else if (sessionType == 'observation') {
+      await _startObservationSession(client);
+    }
+  }
+
+  Future<String?> _showSessionTypeDialog() async {
+    return showDialog<String>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Select Session Type'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Choose the type of session you want to start:'),
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                onPressed: () => Navigator.of(context).pop('therapy'),
+                icon: const Icon(Icons.medical_services, size: 24),
+                label: const Text('Therapy Session'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).primaryColor,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  minimumSize: const Size(double.infinity, 50),
+                ),
+              ),
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                onPressed: () => Navigator.of(context).pop('observation'),
+                icon: const Icon(Icons.visibility, size: 24),
+                label: const Text('Observation/Directions'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  minimumSize: const Size(double.infinity, 50),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _startObservationSession(Client client) async {
+    setState(() => _isLoading = true);
+
+    try {
+      final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
+      final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
+
+      final startDateTime = DateTime.now();
+      
+      final visit = Visit(
+        id: '',
+        clientId: client.id,
+        staffId: _currentStaffId,
+        serviceCode: 'Observation/Directions',
+        startTs: startDateTime,
+        endTs: null,
+        status: 'in_progress',
+      );
+
+      final createdVisit = await fileMakerService.createVisitWithDio(visit, skipLocation: _isHistoricalMode);
+      sessionProvider.startVisit(createdVisit, client);
+
+      if (mounted) {
+        setState(() => _isLoading = false);
+        Navigator.pushReplacementNamed(
+          context,
+          '/observation-directions',
+          arguments: {
+            'visit': createdVisit,
+            'client': client,
+          },
+        );
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error starting observation session: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _enterManualSheet(Client client) async {
+    setState(() => _selectedClient = client);
+    Navigator.pushNamed(
+      context,
+      '/manual-session',
+      arguments: {'client': client},
+    );
+  }
+
+  Future<void> _startVisit() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (_selectedClient == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a client')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
+      final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
+
+      final startDateTime = _isHistoricalMode 
+          ? DateTime(
+              _selectedDate.year,
+              _selectedDate.month,
+              _selectedDate.day,
+              _selectedStartTime.hour,
+              _selectedStartTime.minute,
+            )
+          : DateTime.now();
+      
+      final endDateTime = _isHistoricalMode 
+          ? DateTime(
+              _selectedDate.year,
+              _selectedDate.month,
+              _selectedDate.day,
+              _selectedEndTime.hour,
+              _selectedEndTime.minute,
+            )
+          : null;
+      
+      final visit = Visit(
+        id: '',
+        clientId: _selectedClient!.id,
+        staffId: _currentStaffId,
+        serviceCode: _currentServiceCode,
+        startTs: startDateTime,
+        endTs: endDateTime,
+        status: 'in_progress',
+      );
+
+      final createdVisit = await fileMakerService.createVisitWithDio(visit, skipLocation: _isHistoricalMode);
+      sessionProvider.startVisit(createdVisit, _selectedClient!);
+      
+      try {
+        final assignments = await fileMakerService.getProgramAssignments(_selectedClient!.id);
+        sessionProvider.setActiveAssignments(assignments);
+      } catch (e) {}
+      
+      try {
+        final behaviorDefs = await fileMakerService.getBehaviorDefinitions(clientId: _selectedClient!.id);
+        sessionProvider.setBehaviorDefinitions(behaviorDefs);
+      } catch (e) {}
+
+      if (mounted) {
+        setState(() => _isLoading = false);
+        
+        if (_isHistoricalMode) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Manual session created. You can now enter session data.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          Navigator.pushReplacementNamed(
+            context,
+            '/session',
+            arguments: {
+              'visit': createdVisit,
+              'client': _selectedClient!,
+            },
+          );
+        }
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error starting visit: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _refreshClients() async {
+    setState(() => _isLoading = true);
+    try {
+      final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
+      final isValid = await fileMakerService.validateToken();
+      
+      if (isValid) {
+        await _loadClients();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Clients refreshed successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Session expired. Please login again.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          Navigator.pushReplacementNamed(context, '/');
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error refreshing: $e')),
+        );
+      }
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: 10),
+            
+            // Refresh Button Row
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton.icon(
+                  onPressed: _refreshClients,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Refresh'),
+                ),
+              ],
+            ),
+            
+            // Manual Entry Mode Toggle
+            Consumer<FileMakerService>(
+              builder: (context, fileMakerService, child) {
+                final canManualEntry = fileMakerService.currentStaffCanManualEntry ?? false;
+                
+                if (!canManualEntry) {
+                  return const SizedBox.shrink();
+                }
+                
+                return Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.history,
+                              color: _isHistoricalMode ? Theme.of(context).primaryColor : Colors.grey,
+                            ),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text(
+                                'Manual Entry Mode',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                            Switch(
+                              value: _isHistoricalMode,
+                              onChanged: (value) {
+                                setState(() {
+                                  _isHistoricalMode = value;
+                                });
+                              },
+                            ),
+                          ],
+                        ),
+                        if (_isHistoricalMode) ...[
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Enter session data manually with start and end times',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 20),
+            
+            // Start a Session Now Section
+            const Text(
+              '🚀 Start a Session Now',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              height: 350,
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.green[300]!),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: _clients.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.people_outline, size: 48, color: Colors.grey),
+                          const SizedBox(height: 8),
+                          Text(
+                            'No patients available',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              color: Colors.grey,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextButton.icon(
+                            onPressed: _refreshClients,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Refresh'),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: _clients.length,
+                      itemBuilder: (context, index) {
+                        return _buildClientRow(_clients[index]);
+                      },
+                    ),
+            ),
+            const SizedBox(height: 20),
+            
+            // Past Notes Section
+            const Text(
+              '📋 Past Notes',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              height: 80,
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.orange[300]!),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: InkWell(
+                onTap: () {
+                  Navigator.pushNamed(context, '/completed-sessions');
+                },
+                borderRadius: BorderRadius.circular(8),
+                child: const Center(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.history, size: 24, color: Colors.orange),
+                      SizedBox(width: 12),
+                      Text(
+                        'View Completed Sessions',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class StartVisitPage extends StatefulWidget {
   const StartVisitPage({super.key});
 
@@ -430,7 +972,117 @@ class _StartVisitPageState extends State<StartVisitPage> {
 
   Future<void> _startSessionWithClient(Client client) async {
     setState(() => _selectedClient = client);
-    await _startVisit();
+    
+    // Show session type selection dialog
+    final sessionType = await _showSessionTypeDialog();
+    if (sessionType == null) {
+      return; // User cancelled
+    }
+    
+    if (sessionType == 'therapy') {
+      // Continue with normal therapy session
+      await _startVisit();
+    } else if (sessionType == 'observation') {
+      // Navigate to observation/directions page
+      await _startObservationSession(client);
+    }
+  }
+
+  /// Show dialog to select session type
+  Future<String?> _showSessionTypeDialog() async {
+    return showDialog<String>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Select Session Type'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Choose the type of session you want to start:'),
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                onPressed: () => Navigator.of(context).pop('therapy'),
+                icon: const Icon(Icons.medical_services, size: 24),
+                label: const Text('Therapy Session'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).primaryColor,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  minimumSize: const Size(double.infinity, 50),
+                ),
+              ),
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                onPressed: () => Navigator.of(context).pop('observation'),
+                icon: const Icon(Icons.visibility, size: 24),
+                label: const Text('Observation/Directions'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  minimumSize: const Size(double.infinity, 50),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Start observation/directions session
+  Future<void> _startObservationSession(Client client) async {
+    setState(() => _isLoading = true);
+
+    try {
+      final fileMakerService = Provider.of<FileMakerService>(context, listen: false);
+      final sessionProvider = Provider.of<SessionProvider>(context, listen: false);
+
+      // Create visit for observation session
+      final startDateTime = DateTime.now();
+      
+      final visit = Visit(
+        id: '', // Will be set by FileMaker
+        clientId: client.id,
+        staffId: _currentStaffId,
+        serviceCode: 'Observation/Directions', // Different service code
+        startTs: startDateTime,
+        endTs: null,
+        status: 'in_progress',
+      );
+
+      final createdVisit = await fileMakerService.createVisitWithDio(visit, skipLocation: _isHistoricalMode);
+      
+      // Start session
+      sessionProvider.startVisit(createdVisit, client);
+
+      if (mounted) {
+        setState(() => _isLoading = false);
+        
+        // Navigate to observation/directions page
+        Navigator.pushReplacementNamed(
+          context,
+          '/observation-directions',
+          arguments: {
+            'visit': createdVisit,
+            'client': client,
+          },
+        );
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error starting observation session: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _enterManualSheet(Client client) async {

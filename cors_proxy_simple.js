@@ -14,15 +14,15 @@ app.get('/health', (req, res) => res.status(200).send('ok'));
 
 // Mount at /fmi. Target is JUST the origin. No path rewrites.
 app.use('/fmi', createProxyMiddleware({
-  target: 'https://devdb.sphereemr.com',
-  changeOrigin: true,          // set Host/SNI to devdb.sphereemr.com
+  target: 'https://fms.sphereemr.com',
+  changeOrigin: true,          // set Host/SNI to fms.sphereemr.com
   secure: true,                // keep true unless upstream is self-signed
   selfHandleResponse: false,
   logLevel: 'debug',
   xfwd: true,
   onProxyReq(proxyReq, req) {
     // Force correct upstream host header just in case
-    proxyReq.setHeader('Host', 'devdb.sphereemr.com');
+    proxyReq.setHeader('Host', 'fms.sphereemr.com');
     // Show exactly what we're sending
     console.log('→', req.method, req.originalUrl);
   },

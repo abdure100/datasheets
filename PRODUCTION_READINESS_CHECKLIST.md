@@ -3,13 +3,13 @@
 ## ✅ Configuration Review
 
 ### FileMaker Configuration
-- [x] **baseUrl**: `https://db.sphereemr.com/fmi/data/vLatest` - ✅ Set
+- [x] **baseUrl**: `https://fms.sphereemr.com/fmi/data/vLatest` - ✅ Set
 - [x] **database**: `EIDBI` - ✅ Set
 - [x] **username**: `fmapi` - ✅ Set (verify if this is production username)
 - [x] **password**: Set - ✅ Set (verify if this is production password)
 
 ### MCP API Configuration
-- [x] **mcpBaseUrl**: `https://eidbi.sphereemr.com/api` - ✅ Updated for production
+- [x] **mcpBaseUrl**: `https://fms.sphereemr.com/api` - ✅ Updated for production
 - [ ] **sanctumToken**: Currently null - ⚠️ **NEEDS TO BE SET** at runtime from secure storage
 
 ### Note Drafting Configuration
@@ -130,7 +130,7 @@ class AppConfig {
 
 ## ✅ What's Ready
 
-1. ✅ MCP base URL configured: `https://eidbi.sphereemr.com/api`
+1. ✅ MCP base URL configured: `https://fms.sphereemr.com/api`
 2. ✅ MCP service implementation complete
 3. ✅ FileMaker service configured
 4. ✅ Note generation configured

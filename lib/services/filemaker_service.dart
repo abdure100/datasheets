@@ -32,6 +32,7 @@ class FileMakerService extends ChangeNotifier {
   // Session global variables
   String? _currentStaffId;
   String? _currentCompanyId;
+  String? _currentCompanyName;
   String? _currentStaffName;
   String? _currentStaffEmail;
   bool? _currentStaffCanManualEntry;
@@ -175,7 +176,9 @@ class FileMakerService extends ChangeNotifier {
   // Session global variables getters
   String? get currentStaffId => _currentStaffId;
   String? get currentCompanyId => _currentCompanyId;
+  String? get currentCompanyName => _currentCompanyName;
   String? get currentStaffName => _currentStaffName;
+  String? get currentStaffEmail => _currentStaffEmail;
   bool? get currentStaffCanManualEntry => _currentStaffCanManualEntry;
 
   Future<void> _loadStoredToken() async {
@@ -525,6 +528,7 @@ class FileMakerService extends ChangeNotifier {
         // Store session global variables
         _currentStaffId = fieldData['PrimaryKey']?.toString();
         _currentCompanyId = fieldData['Company']?.toString();
+        _currentCompanyName = fieldData['CompanyName']?.toString(); // TODO: Update field name if different
         _currentStaffName = fieldData['FullName']?.toString();
         _currentStaffEmail = fieldData['email']?.toString() ?? fieldData['Username']?.toString();
         _currentStaffCanManualEntry = fieldData['Allow_manual_entry'] == 1 || fieldData['Allow_manual_entry'] == '1';
@@ -1286,6 +1290,115 @@ class FileMakerService extends ChangeNotifier {
     } catch (e) {
       if (e is DioException) {
         print('❌ DioException when updating visit end_ts: ${e.message}');
+      }
+      rethrow;
+    }
+  }
+
+  /// Update observation/direction fields for service code 97155
+  /// Saves to specific fields: additional_notes, response_progress, methods, modifications, adjustments, observations
+  Future<void> updateObservationDirectionFields(
+    String visitId, {
+    String? additionalNotes,
+    String? responseProgress,
+    String? methods,
+    String? modifications,
+    String? adjustments,
+    String? observations,
+  }) async {
+    await _ensureAuthenticated();
+    
+    try {
+      // First, find the recordId using the PrimaryKey
+      final findResponse = await _dio.post(
+        '/databases/$database/layouts/api_appointments/_find',
+        data: {
+          'query': [
+            {'PrimaryKey': '==$visitId'}
+          ]
+        },
+        options: Options(
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $_token',
+            'Accept': 'application/json',
+          },
+        ),
+      );
+      
+      if (findResponse.statusCode != 200) {
+        throw Exception('Failed to find visit record: ${findResponse.statusCode}');
+      }
+      
+      final findData = findResponse.data as Map<String, dynamic>;
+      if (findData['response']['data'] == null || 
+          (findData['response']['data'] as List).isEmpty) {
+        throw Exception('Visit record not found');
+      }
+      
+      final recordData = (findData['response']['data'] as List).first;
+      final recordId = recordData['recordId'];
+      
+      // Build update data with only non-null fields
+      final updateData = <String, dynamic>{};
+      
+      if (additionalNotes != null && additionalNotes.trim().isNotEmpty) {
+        updateData['additional_notes'] = additionalNotes.trim();
+      }
+      if (responseProgress != null && responseProgress.trim().isNotEmpty) {
+        updateData['response_progress'] = responseProgress.trim();
+      }
+      if (methods != null && methods.trim().isNotEmpty) {
+        updateData['methods'] = methods.trim();
+      }
+      if (modifications != null && modifications.trim().isNotEmpty) {
+        updateData['modifications'] = modifications.trim();
+      }
+      if (adjustments != null && adjustments.trim().isNotEmpty) {
+        updateData['adjustments'] = adjustments.trim();
+      }
+      if (observations != null && observations.trim().isNotEmpty) {
+        updateData['observations'] = observations.trim();
+      }
+      
+      // Add metadata
+      final modifiedBy = _currentStaffEmail ?? _currentStaffName ?? 'unknown';
+      updateData['modified_by'] = modifiedBy;
+      updateData['Local_ModificationTimestamp'] = _formatLocalTimestamp(DateTime.now());
+      
+      if (updateData.isEmpty) {
+        print('⚠️ No observation/direction fields to update');
+        return;
+      }
+      
+      print('📝 Updating observation/direction fields for visit: $visitId');
+      print('📊 Update data: ${jsonEncode(updateData)}');
+      
+      final response = await _dio.patch(
+        '/databases/$database/layouts/api_appointments/records/$recordId',
+        data: {
+          'fieldData': updateData,
+        },
+        options: Options(
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $_token',
+            'Accept': 'application/json',
+          },
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        print('✅ Observation/direction fields updated successfully: $visitId');
+      } else {
+        throw Exception('Failed to update observation/direction fields: ${response.statusCode}');
+      }
+    } catch (e) {
+      if (e is DioException) {
+        print('❌ DioException when updating observation/direction fields: ${e.message}');
+        if (e.response?.data != null) {
+          print('❌ Response data: ${jsonEncode(e.response!.data)}');
+        }
       }
       rethrow;
     }
@@ -2058,6 +2171,7 @@ class FileMakerService extends ChangeNotifier {
     // Clear session global variables
     _currentStaffId = null;
     _currentCompanyId = null;
+    _currentCompanyName = null;
     _currentStaffName = null;
     _currentStaffEmail = null;
     _currentStaffCanManualEntry = null;
@@ -2774,6 +2888,320 @@ class FileMakerService extends ChangeNotifier {
         print('❌ Response data: ${e.response?.data}');
       }
       rethrow;
+    }
+  }
+
+  /// Get caregivers/guardians for a specific patient from dapi-caregiver_guardian layout
+  Future<List<Map<String, dynamic>>> getCaregivers({String? patientId}) async {
+    await _ensureAuthenticated();
+
+    try {
+      Map<String, dynamic> query;
+      
+      if (patientId != null) {
+        // Use clientId field to filter by patient
+        query = {
+          'query': [
+            {'clientId': '==$patientId'},
+          ],
+        };
+      } else {
+        // Get all caregivers
+        query = {
+          'query': [
+            {'clientId': '*'},
+          ],
+        };
+      }
+
+      print('🔍 Fetching caregivers from dapi-caregiver_guardian layout');
+      print('📋 Query: ${jsonEncode(query)}');
+
+      final response = await _dio.post(
+        '/databases/$database/layouts/dapi-caregiver_guardian/_find',
+        data: query,
+        options: Options(
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $_token',
+            'Accept': 'application/json',
+          },
+        ),
+      );
+
+      final data = response.data as Map<String, dynamic>;
+      final msgs = (data['messages'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
+      final code = msgs.isNotEmpty ? '${msgs.first['code']}' : null;
+      final msg = msgs.isNotEmpty ? '${msgs.first['message']}' : null;
+
+      if (code == '0') {
+        final records = (data['response']?['data'] as List?) ?? const [];
+        print('✅ Found ${records.length} caregivers');
+
+        final caregivers = <Map<String, dynamic>>[];
+        for (final record in records) {
+          try {
+            final fieldData = record['fieldData'] as Map<String, dynamic>;
+            
+            // Build name from first_name and last_name fields
+            final firstName = fieldData['first_name']?.toString() ?? '';
+            final middleInitial = fieldData['middle_initial']?.toString() ?? '';
+            final lastName = fieldData['last_name']?.toString() ?? '';
+            
+            // Build display name: "First M Last"
+            String displayName = firstName;
+            if (middleInitial.isNotEmpty) {
+              displayName += ' $middleInitial';
+            }
+            if (lastName.isNotEmpty) {
+              displayName += ' $lastName';
+            }
+            displayName = displayName.trim();
+            
+            // Capitalize properly
+            if (displayName.isNotEmpty) {
+              displayName = displayName.split(' ').map((word) {
+                if (word.isEmpty) return word;
+                return word[0].toUpperCase() + word.substring(1).toLowerCase();
+              }).join(' ');
+            }
+            
+            final relationship = fieldData['relationship']?.toString() ?? '';
+            
+            // Build full address
+            final street = fieldData['street_address']?.toString() ?? '';
+            final city = fieldData['city']?.toString() ?? '';
+            final state = fieldData['state']?.toString() ?? '';
+            final zip = fieldData['zip_code']?.toString() ?? '';
+            String fullAddress = '';
+            if (street.isNotEmpty) fullAddress = street;
+            if (city.isNotEmpty) fullAddress += fullAddress.isNotEmpty ? ', $city' : city;
+            if (state.isNotEmpty) fullAddress += fullAddress.isNotEmpty ? ', $state' : state;
+            if (zip.isNotEmpty) fullAddress += fullAddress.isNotEmpty ? ' $zip' : zip;
+            
+            caregivers.add({
+              'id': fieldData['PrimaryKey']?.toString() ?? record['recordId']?.toString() ?? '',
+              'name': displayName,
+              'firstName': firstName,
+              'lastName': lastName,
+              'relationship': relationship,
+              'phone': fieldData['cell_phone']?.toString() ?? fieldData['home_phone']?.toString() ?? '',
+              'homePhone': fieldData['home_phone']?.toString() ?? '',
+              'cellPhone': fieldData['cell_phone']?.toString() ?? '',
+              'email': fieldData['email']?.toString() ?? '',
+              'patientId': fieldData['clientId']?.toString() ?? '',
+              'address': fullAddress,
+              'isLegalGuardian': fieldData['is_legal_guardian']?.toString() == 'Yes',
+              'custodyStatus': fieldData['custody_status']?.toString() ?? '',
+              'isPrimary': fieldData['is_legal_guardian']?.toString() == 'Yes',
+            });
+          } catch (e) {
+            print('⚠️ Error parsing caregiver record: $e');
+            continue;
+          }
+        }
+
+        return caregivers;
+      }
+
+      // No records found
+      if (code == '401') {
+        print('📭 No caregivers found');
+        return [];
+      }
+
+      throw Exception('FileMaker error $code: $msg');
+
+    } catch (e) {
+      if (e is DioException) {
+        print('❌ DioException in getCaregivers: ${e.message}');
+        print('❌ Response data: ${e.response?.data}');
+        
+        // Return empty list if layout doesn't exist or other error
+        if (e.response?.statusCode == 404 || e.response?.statusCode == 500) {
+          print('⚠️ Layout may not exist or has errors, returning empty list');
+          return [];
+        }
+      }
+      rethrow;
+    }
+  }
+
+  /// Create a Patient Rights & Responsibilities record
+  /// Layout: dapi-Patient_rights_responsibilites
+  Future<String> createPatientRightsRecord({
+    required String clientId,
+    required Map<String, dynamic> formData,
+  }) async {
+    await _ensureAuthenticated();
+    
+    print('📝 Creating Patient Rights record for client: $clientId');
+    print('📋 Form data: $formData');
+    print('🔗 Using layout: dapi-Patient_rights_responsibilites');
+    print('🔗 Database: $database');
+    
+    try {
+      // Add clientId back
+      final recordData = <String, dynamic>{
+        ...formData,
+        'clientId': clientId,
+      };
+      
+      print('📤 Sending record data: $recordData');
+      
+      final response = await _dio.post(
+        '/databases/$database/layouts/dapi-Patient_rights_responsibilites/records',
+        data: {
+          'fieldData': recordData,
+        },
+        options: Options(
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $_token',
+            'Accept': 'application/json',
+          },
+        ),
+      );
+
+      print('📥 Response status: ${response.statusCode}');
+      print('📥 Response data: ${response.data}');
+      
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = response.data as Map<String, dynamic>;
+        final code = data['messages']?[0]?['code']?.toString() ?? '';
+        if (code != '0') {
+          final message = data['messages']?[0]?['message']?.toString() ?? 'Unknown error';
+          print('❌ FileMaker error $code: $message');
+          throw Exception('FileMaker error $code: $message');
+        }
+        final recordId = data['response']?['recordId']?.toString() ?? '';
+        print('✅ Patient Rights record created with ID: $recordId');
+        return recordId;
+      }
+      
+      throw Exception('Failed to create Patient Rights record: ${response.statusCode}');
+    } catch (e) {
+      if (e is DioException) {
+        print('❌ DioException in createPatientRightsRecord: ${e.message}');
+        print('❌ Response status: ${e.response?.statusCode}');
+        print('❌ Response data: ${e.response?.data}');
+        
+        // Extract FileMaker error message if available
+        final data = e.response?.data;
+        if (data is Map) {
+          final message = data['messages']?[0]?['message']?.toString();
+          final code = data['messages']?[0]?['code']?.toString();
+          if (message != null) {
+            throw Exception('FileMaker error $code: $message');
+          }
+        }
+      } else {
+        print('❌ Error in createPatientRightsRecord: $e');
+      }
+      rethrow;
+    }
+  }
+
+  /// Get Patient Rights records for a specific client or all records
+  /// Layout: dapi-Patient_rights_responsibilites
+  Future<List<Map<String, dynamic>>> getPatientRightsRecords({
+    String? clientId,
+  }) async {
+    await _ensureAuthenticated();
+
+    print('📋 Fetching Patient Rights records${clientId != null ? ' for client: $clientId' : ''}');
+
+    try {
+      final Map<String, dynamic> queryData;
+      
+      if (clientId != null) {
+        queryData = {
+          'query': [
+            {'clientId': clientId}
+          ]
+        };
+      } else {
+        // Get all records - use wildcard search
+        queryData = {
+          'query': [
+            {'clientId': '*'}
+          ]
+        };
+      }
+
+      final response = await _dio.post(
+        '$baseUrl/databases/$database/layouts/dapi-Patient_rights_responsibilites/_find',
+        data: queryData,
+        options: Options(
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $_token',
+          },
+        ),
+      );
+
+      print('📥 Response status: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final data = response.data as Map<String, dynamic>;
+        final code = data['messages']?[0]?['code']?.toString() ?? '';
+        
+        // Code 401 = no records found
+        if (code == '401') {
+          print('📋 No Patient Rights records found');
+          return [];
+        }
+        
+        if (code != '0') {
+          final message = data['messages']?[0]?['message']?.toString() ?? 'Unknown error';
+          throw Exception('FileMaker error $code: $message');
+        }
+
+        final records = (data['response']?['data'] as List?)
+            ?.map((record) {
+              final fieldData = record['fieldData'] as Map<String, dynamic>?;
+              if (fieldData == null) return null;
+              
+              return {
+                'recordId': record['recordId']?.toString() ?? '',
+                'clientId': fieldData['clientId'] ?? '',
+                'guardian_name': fieldData['guardian_name'] ?? '',
+                'guardian_date': fieldData['guardian_date'] ?? '',
+                'guardian_signature': fieldData['guardian_signature'] ?? '',
+                'consent_for_data_collection': fieldData['consent_for_data_collection'] ?? 0,
+                'release_of_Information': fieldData['release_of_Information'] ?? 0,
+                'telehealth_consent': fieldData['telehealth_consent'] ?? 0,
+                'financialResponsibility': fieldData['financialResponsibility'] ?? 0,
+                'client_rights_responsibilites': fieldData['client_rights_responsibilites'] ?? 0,
+                'benefits_of_treatment': fieldData['benefits_of_treatment'] ?? 0,
+              };
+            })
+            .whereType<Map<String, dynamic>>()
+            .toList() ?? [];
+
+        print('✅ Found ${records.length} Patient Rights records');
+        return records;
+      }
+
+      return [];
+    } catch (e) {
+      if (e is DioException) {
+        print('❌ DioException in getPatientRightsRecords: ${e.message}');
+        
+        // 401 error or no records found - return empty list
+        if (e.response?.statusCode == 500) {
+          final data = e.response?.data;
+          if (data is Map) {
+            final code = data['messages']?[0]?['code']?.toString();
+            if (code == '401') {
+              print('📋 No records found');
+              return [];
+            }
+          }
+        }
+      }
+      print('❌ Error in getPatientRightsRecords: $e');
+      return [];
     }
   }
 }
